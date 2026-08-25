@@ -22,18 +22,18 @@ class SovereigntyFeaturePack : FeaturePackEntrypoint {
     )
 
     override fun start(context: FeaturePackContext): FeaturePackSession {
-        val loaded = SovereigntyRepository.load(javaClass.getResourceAsStream("/sovereignty.json"))
-        loaded.failure?.let { error ->
+        val repository = SovereigntyRepository(EmbeddedJsonSnapshotProvider())
+        repository.metadata.failureMessage?.let { failureMessage ->
             context.logger().log(
                 FeaturePackLogLevel.WARN,
                 "Sovereignty fixture could not be loaded; providers will remain empty",
-                error,
+                IllegalStateException(failureMessage),
             )
         }
-        if (loaded.ignoredRecordCount > 0) {
+        if (repository.metadata.ignoredRecordCount > 0) {
             context.logger().log(
                 FeaturePackLogLevel.WARN,
-                "Ignored ${loaded.ignoredRecordCount} invalid or duplicate sovereignty record(s)",
+                "Ignored ${repository.metadata.ignoredRecordCount} invalid or duplicate sovereignty record(s)",
                 null,
             )
         }
@@ -41,8 +41,8 @@ class SovereigntyFeaturePack : FeaturePackEntrypoint {
         var overlayRegistration: OverlayRegistration? = null
         var systemInfoRegistration: SystemInfoRegistration? = null
         try {
-            overlayRegistration = context.overlays().register(SovereigntyOverlayProvider(loaded.repository))
-            systemInfoRegistration = context.systemInfo().register(SovereigntySystemInfoProvider(loaded.repository))
+            overlayRegistration = context.overlays().register(SovereigntyOverlayProvider(repository))
+            systemInfoRegistration = context.systemInfo().register(SovereigntySystemInfoProvider(repository))
             context.logger().log(FeaturePackLogLevel.INFO, "Sovereignty Pack started", null)
             return SovereigntySession(
                 overlayRegistration = overlayRegistration,

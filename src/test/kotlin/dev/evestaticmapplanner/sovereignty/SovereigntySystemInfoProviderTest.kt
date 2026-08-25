@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 
 class SovereigntySystemInfoProviderTest {
     private val provider = SovereigntySystemInfoProvider(
-        SovereigntyRepository.load(javaClass.getResourceAsStream("/sovereignty.json")).repository,
+        SovereigntyRepository(EmbeddedJsonSnapshotProvider()),
     )
 
     @Test

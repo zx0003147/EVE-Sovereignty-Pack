@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 class SovereigntyOverlayProviderTest {
     @Test
     fun `provider exposes a Sovereignty layer with one entry per record`() {
-        val repository = SovereigntyRepository.load(javaClass.getResourceAsStream("/sovereignty.json")).repository
+        val repository = SovereigntyRepository(EmbeddedJsonSnapshotProvider())
         val provider = SovereigntyOverlayProvider(repository)
 
         assertEquals("sovereignty.pack.overlay", provider.descriptor().id)

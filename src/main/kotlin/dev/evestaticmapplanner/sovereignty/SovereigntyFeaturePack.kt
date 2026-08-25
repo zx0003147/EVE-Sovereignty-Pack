@@ -13,7 +13,14 @@ import dev.evestaticmapplanner.feature.api.PackVersion
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistration
 import java.util.concurrent.atomic.AtomicBoolean
 
-class SovereigntyFeaturePack : FeaturePackEntrypoint {
+class SovereigntyFeaturePack internal constructor(
+    private val runtimeComposition: SovereigntyRuntimeComposition,
+) : FeaturePackEntrypoint {
+    constructor() : this(SovereigntyRuntimeComposition.production())
+
+    internal val dataSourceMode: SovereigntyDataSourceMode
+        get() = runtimeComposition.dataSourceMode
+
     override fun descriptor() = FeaturePackDescriptor(
         packId = PackId("sovereignty.pack"),
         displayName = "Sovereignty Pack",
@@ -22,11 +29,11 @@ class SovereigntyFeaturePack : FeaturePackEntrypoint {
     )
 
     override fun start(context: FeaturePackContext): FeaturePackSession {
-        val repository = SovereigntyRepository(EmbeddedJsonSnapshotProvider())
+        val repository = runtimeComposition.createRepository()
         repository.metadata.failureMessage?.let { failureMessage ->
             context.logger().log(
                 FeaturePackLogLevel.WARN,
-                "Sovereignty fixture could not be loaded; providers will remain empty",
+                "Sovereignty snapshot could not be loaded from $dataSourceMode; providers will remain empty",
                 IllegalStateException(failureMessage),
             )
         }

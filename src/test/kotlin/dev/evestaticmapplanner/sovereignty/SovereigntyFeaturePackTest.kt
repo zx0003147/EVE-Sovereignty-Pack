@@ -3,6 +3,7 @@ package dev.evestaticmapplanner.sovereignty
 import dev.evestaticmapplanner.feature.api.CoreVersion
 import dev.evestaticmapplanner.feature.api.FeatureApiVersions
 import dev.evestaticmapplanner.feature.api.FeaturePackContext
+import dev.evestaticmapplanner.feature.api.FeaturePackEntrypoint
 import dev.evestaticmapplanner.feature.api.FeaturePackHostInfo
 import dev.evestaticmapplanner.feature.api.FeaturePackLogLevel
 import dev.evestaticmapplanner.feature.api.FeaturePackLogger
@@ -16,6 +17,7 @@ import dev.evestaticmapplanner.feature.api.SystemInfoProvider
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistration
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistry
 import java.nio.file.Path
+import java.util.ServiceLoader
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -33,9 +35,25 @@ class SovereigntyFeaturePackTest {
     }
 
     @Test
+    fun `production entrypoint explicitly selects public ESI without loading it`() {
+        val pack = SovereigntyFeaturePack()
+
+        assertEquals(SovereigntyDataSourceMode.PUBLIC_ESI, pack.dataSourceMode)
+    }
+
+    @Test
+    fun `real entrypoint remains ServiceLoader discoverable and constructible`() {
+        val entrypoint = ServiceLoader.load(FeaturePackEntrypoint::class.java)
+            .filterIsInstance<SovereigntyFeaturePack>()
+            .single()
+
+        assertEquals(SovereigntyDataSourceMode.PUBLIC_ESI, entrypoint.dataSourceMode)
+    }
+
+    @Test
     fun `start registers both providers and close unregisters both`() {
         val context = RecordingContext()
-        val session = SovereigntyFeaturePack().start(context)
+        val session = embeddedFeaturePack().start(context)
 
         assertTrue(context.overlayRegistry.active)
         assertTrue(context.systemInfoRegistry.active)
@@ -48,6 +66,57 @@ class SovereigntyFeaturePackTest {
         assertFalse(context.overlayRegistry.active)
         assertFalse(context.systemInfoRegistry.active)
         assertEquals(listOf("INFO:Sovereignty Pack started", "INFO:Sovereignty Pack stopped"), context.events)
+    }
+
+    @Test
+    fun `one public ESI activation shares one loaded snapshot across consumers`() {
+        val client = RecordingPublicEsiClient()
+        val context = RecordingContext()
+        val pack = SovereigntyFeaturePack(
+            SovereigntyRuntimeComposition(
+                dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
+                publicEsiClientFactory = { client },
+            ),
+        )
+
+        val session = pack.start(context)
+        repeat(3) {
+            context.overlayRegistry.provider?.snapshot()
+            context.systemInfoRegistry.provider?.provide(30_004_759)
+        }
+
+        assertEquals(1, client.sovereigntyRequestCount)
+        assertEquals(1, client.namesRequestCount)
+        assertEquals("Remote Alliance", context.overlayRegistry.provider?.snapshot()?.entries?.single()?.title)
+        assertEquals(
+            "Remote Alliance",
+            context.systemInfoRegistry.provider?.provide(30_004_759)?.sections?.single()?.fields?.first()?.value,
+        )
+        session.close()
+    }
+
+    private fun embeddedFeaturePack() = SovereigntyFeaturePack(
+        SovereigntyRuntimeComposition(SovereigntyDataSourceMode.EMBEDDED),
+    )
+
+    private class RecordingPublicEsiClient : PublicEsiClient {
+        var sovereigntyRequestCount = 0
+        var namesRequestCount = 0
+
+        override fun fetchSovereigntySystems(): PublicEsiPayloadResult.Success {
+            sovereigntyRequestCount += 1
+            return PublicEsiPayloadResult.Success(
+                """{"solar_systems":[{"solar_system_id":30004759,"claim":{"alliance":{"alliance_id":99000001}}}]}""",
+            )
+        }
+
+        override fun resolveNames(ids: List<Int>): PublicEsiPayloadResult.Success {
+            namesRequestCount += 1
+            assertEquals(listOf(99_000_001), ids)
+            return PublicEsiPayloadResult.Success(
+                """[{"id":99000001,"name":"Remote Alliance","category":"alliance"}]""",
+            )
+        }
     }
 
     private class RecordingContext : FeaturePackContext {

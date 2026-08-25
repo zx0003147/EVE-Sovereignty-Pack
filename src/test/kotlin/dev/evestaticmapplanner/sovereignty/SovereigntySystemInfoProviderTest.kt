@@ -15,7 +15,7 @@ class SovereigntySystemInfoProviderTest {
 
         assertEquals("Sovereignty", section.title)
         assertEquals(
-            listOf("Owner" to "SV-1 Fixture Alliance", "Status" to "Claimed (static fixture)"),
+            listOf("Owner" to "Goonswarm Federation", "Status" to "Claimed (static fixture)"),
             section.fields.map { it.label to it.value },
         )
     }

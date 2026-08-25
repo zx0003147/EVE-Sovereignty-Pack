@@ -14,8 +14,9 @@ class SovereigntyOverlayProviderTest {
         assertEquals("sovereignty", provider.layers().single().id)
         assertEquals(2, provider.snapshot().entries.size)
         with(provider.snapshot().entries.first { it.systemId == 30_004_759 }) {
-            assertEquals("SV-1 Fixture Alliance", title)
+            assertEquals("Goonswarm Federation", title)
             assertEquals("Claimed (static fixture)", subtitle)
+            assertEquals("ring-color:${SovereigntyVisualIdentity.GOONSWARM_YELLOW}", value)
         }
     }
 }

@@ -15,6 +15,7 @@ internal class SovereigntyOverlayProvider(
             systemId = record.systemId,
             title = record.allianceName,
             subtitle = record.sovereigntyStatus,
+            value = SovereigntyVisualIdentity.ringMetadata(record.allianceName),
         )
     })
 

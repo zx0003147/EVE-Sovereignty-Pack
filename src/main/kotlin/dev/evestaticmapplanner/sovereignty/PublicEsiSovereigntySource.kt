@@ -49,7 +49,7 @@ internal class PublicEsiSovereigntySource(
                 systemId = system.systemId,
                 allianceName = namesById.getValue(owner.allianceId),
                 corporationName = owner.corporationId?.let(namesById::getValue),
-                sovereigntyStatus = CLAIMED_STATUS,
+                sovereigntyStatus = PUBLIC_ESI_CLAIMED_STATUS,
             )
         }
         return RemoteSnapshotResult.Success(SovereigntySnapshot(records))
@@ -94,7 +94,6 @@ internal class PublicEsiSovereigntySource(
     private companion object {
         const val ALLIANCE_CATEGORY = "alliance"
         const val CORPORATION_CATEGORY = "corporation"
-        const val CLAIMED_STATUS = "Claimed"
         const val NAME_RESOLUTION_BATCH_SIZE = 1_000
     }
 }
@@ -259,5 +258,3 @@ private inline fun invalidIf(condition: Boolean, message: () -> String) {
 private fun invalid(message: String): Nothing = throw InvalidPayloadException(message)
 
 private class InvalidPayloadException(message: String) : RuntimeException(message)
-
-private val NEW_EDEN_SYSTEM_ID_RANGE = 30_000_000..30_999_999

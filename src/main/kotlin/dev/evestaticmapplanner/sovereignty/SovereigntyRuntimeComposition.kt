@@ -1,5 +1,9 @@
 package dev.evestaticmapplanner.sovereignty
 
+import dev.evestaticmapplanner.feature.api.FeaturePackLogger
+import dev.evestaticmapplanner.feature.api.PackRelativePath
+import dev.evestaticmapplanner.feature.api.PackStorage
+
 /** Internal runtime choice; this is deliberately not part of the Feature API or user settings. */
 internal enum class SovereigntyDataSourceMode {
     EMBEDDED,
@@ -11,17 +15,32 @@ internal class SovereigntyRuntimeComposition(
     val dataSourceMode: SovereigntyDataSourceMode,
     private val embeddedProviderFactory: () -> SovereigntySnapshotProvider = ::EmbeddedJsonSnapshotProvider,
     private val publicEsiClientFactory: () -> PublicEsiClient = ::JdkPublicEsiClient,
+    private val cacheFactory: (PackStorage) -> SovereigntySnapshotCache = { storage ->
+        FileSovereigntySnapshotCache(storage.cachePath(PUBLIC_ESI_LKG_CACHE_PATH))
+    },
 ) {
-    fun createSnapshotProvider(): SovereigntySnapshotProvider = when (dataSourceMode) {
+    fun createSnapshotProvider(
+        storage: PackStorage,
+        logger: FeaturePackLogger,
+    ): SovereigntySnapshotProvider = when (dataSourceMode) {
         SovereigntyDataSourceMode.EMBEDDED -> embeddedProviderFactory()
         SovereigntyDataSourceMode.PUBLIC_ESI -> RemoteSovereigntySnapshotProvider(
-            PublicEsiSovereigntySource(publicEsiClientFactory()),
+            CachedRemoteSovereigntySource(
+                remote = PublicEsiSovereigntySource(publicEsiClientFactory()),
+                cache = cacheFactory(storage),
+                logger = logger,
+            ),
         )
     }
 
-    fun createRepository(): SovereigntyRepository = SovereigntyRepository(createSnapshotProvider())
+    fun createRepository(
+        storage: PackStorage,
+        logger: FeaturePackLogger,
+    ): SovereigntyRepository = SovereigntyRepository(createSnapshotProvider(storage, logger))
 
     companion object {
+        val PUBLIC_ESI_LKG_CACHE_PATH = PackRelativePath("public-esi-lkg.json")
+
         fun production() = SovereigntyRuntimeComposition(SovereigntyDataSourceMode.PUBLIC_ESI)
     }
 }

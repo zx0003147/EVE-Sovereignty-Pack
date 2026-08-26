@@ -76,6 +76,12 @@ class SovereigntyFeaturePackTest {
             SovereigntyRuntimeComposition(
                 dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
                 publicEsiClientFactory = { client },
+                cacheFactory = {
+                    object : SovereigntySnapshotCache {
+                        override fun load() = SovereigntyCacheLoadResult.Miss
+                        override fun save(snapshot: SovereigntySnapshot) = SovereigntyCacheSaveResult.Saved
+                    }
+                },
             ),
         )
 

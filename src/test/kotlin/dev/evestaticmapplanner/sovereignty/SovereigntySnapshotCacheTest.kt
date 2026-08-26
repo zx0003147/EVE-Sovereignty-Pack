@@ -2,6 +2,8 @@ package dev.evestaticmapplanner.sovereignty
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.time.Instant
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.exists
 import kotlin.test.Test
@@ -20,10 +22,15 @@ class SovereigntySnapshotCacheTest {
         )
 
         assertEquals(SovereigntyCacheSaveResult.Saved, cache.save(expected))
-        val loaded = assertIs<SovereigntyCacheLoadResult.Hit>(cache.load()).snapshot
+        val loadedResult = assertIs<SovereigntyCacheLoadResult.Hit>(cache.load())
+        val loaded = loadedResult.snapshot
 
         assertEquals(expected.records.sortedBy(SovereigntyRecord::systemId), loaded.records)
         assertEquals(SovereigntySnapshotMetadata(), loaded.metadata)
+        assertEquals(
+            Files.getLastModifiedTime(root.resolve("cache/public-esi-lkg.json")).toInstant(),
+            loadedResult.savedAt,
+        )
     }
 
     @Test
@@ -74,6 +81,8 @@ class SovereigntySnapshotCacheTest {
         val path = root.resolve("cache/public-esi-lkg.json")
         val cache = FileSovereigntySnapshotCache(path)
         assertEquals(SovereigntyCacheSaveResult.Saved, cache.save(snapshot(record("Old Alliance"))))
+        val oldSavedAt = Instant.parse("2020-01-01T00:00:00Z")
+        Files.setLastModifiedTime(path, FileTime.from(oldSavedAt))
 
         assertEquals(SovereigntyCacheSaveResult.Saved, cache.save(snapshot(record("New Alliance"))))
 
@@ -82,9 +91,23 @@ class SovereigntySnapshotCacheTest {
         assertFalse(text.contains("Old Alliance"))
         assertEquals("New Alliance", assertIs<SovereigntyCacheLoadResult.Hit>(cache.load())
             .snapshot.records.single().allianceName)
+        assertTrue(Files.getLastModifiedTime(path).toInstant().isAfter(oldSavedAt))
         Files.list(path.parent).use { paths ->
             assertEquals(listOf(path), paths.toList())
         }
+    }
+
+    @Test
+    fun `loading cache does not change its modification time`() = withTempDirectory { root ->
+        val path = root.resolve("cache/public-esi-lkg.json")
+        val cache = FileSovereigntySnapshotCache(path)
+        assertEquals(SovereigntyCacheSaveResult.Saved, cache.save(snapshot(record("Cached Alliance"))))
+        val savedAt = Instant.parse("2024-04-05T06:07:08Z")
+        Files.setLastModifiedTime(path, FileTime.from(savedAt))
+
+        assertIs<SovereigntyCacheLoadResult.Hit>(cache.load())
+
+        assertEquals(savedAt, Files.getLastModifiedTime(path).toInstant())
     }
 
     private fun withCacheText(text: String, block: (FileSovereigntySnapshotCache) -> Unit) =

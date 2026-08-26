@@ -3,6 +3,7 @@ package dev.evestaticmapplanner.sovereignty
 import dev.evestaticmapplanner.feature.api.FeaturePackLogger
 import dev.evestaticmapplanner.feature.api.PackRelativePath
 import dev.evestaticmapplanner.feature.api.PackStorage
+import java.time.Clock
 
 /** Internal runtime choice; this is deliberately not part of the Feature API or user settings. */
 internal enum class SovereigntyDataSourceMode {
@@ -18,6 +19,7 @@ internal class SovereigntyRuntimeComposition(
     private val cacheFactory: (PackStorage) -> SovereigntySnapshotCache = { storage ->
         FileSovereigntySnapshotCache(storage.cachePath(PUBLIC_ESI_LKG_CACHE_PATH))
     },
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     fun createSnapshotProvider(
         storage: PackStorage,
@@ -29,6 +31,7 @@ internal class SovereigntyRuntimeComposition(
                 remote = PublicEsiSovereigntySource(publicEsiClientFactory()),
                 cache = cacheFactory(storage),
                 logger = logger,
+                clock = clock,
             ),
         )
     }

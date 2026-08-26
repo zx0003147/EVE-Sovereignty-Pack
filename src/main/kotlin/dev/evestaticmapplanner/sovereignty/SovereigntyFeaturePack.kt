@@ -29,7 +29,7 @@ class SovereigntyFeaturePack internal constructor(
     )
 
     override fun start(context: FeaturePackContext): FeaturePackSession {
-        // With no usable LKG this remains a synchronous PUBLIC_ESI load during Pack startup in SV-3C-2.
+        // Startup synchronously selects one final snapshot; providers never refresh it during this Pack session.
         val repository = runtimeComposition.createRepository(context.storage(), context.logger())
         repository.metadata.failureMessage?.let { failureMessage ->
             context.logger().log(

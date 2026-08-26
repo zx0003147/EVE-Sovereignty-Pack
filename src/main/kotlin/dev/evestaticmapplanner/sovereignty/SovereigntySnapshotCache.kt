@@ -5,6 +5,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.time.Instant
 
 internal interface SovereigntySnapshotCache {
     fun load(): SovereigntyCacheLoadResult
@@ -13,7 +14,10 @@ internal interface SovereigntySnapshotCache {
 }
 
 internal sealed interface SovereigntyCacheLoadResult {
-    data class Hit(val snapshot: SovereigntySnapshot) : SovereigntyCacheLoadResult
+    data class Hit(
+        val snapshot: SovereigntySnapshot,
+        val savedAt: Instant,
+    ) : SovereigntyCacheLoadResult
 
     data object Miss : SovereigntyCacheLoadResult
 
@@ -38,7 +42,9 @@ internal class FileSovereigntySnapshotCache(
     override fun load(): SovereigntyCacheLoadResult {
         if (!Files.exists(path)) return SovereigntyCacheLoadResult.Miss
         return try {
-            SovereigntySnapshotCacheCodec.decode(Files.readString(path, Charsets.UTF_8))
+            val serialized = Files.readString(path, Charsets.UTF_8)
+            val savedAt = Files.getLastModifiedTime(path).toInstant()
+            SovereigntySnapshotCacheCodec.decode(serialized, savedAt)
         } catch (error: Exception) {
             SovereigntyCacheLoadResult.Unusable("Could not read sovereignty cache", error)
         }
@@ -108,7 +114,10 @@ internal object SovereigntySnapshotCacheCodec {
         }
     }
 
-    fun decode(serialized: String): SovereigntyCacheLoadResult = try {
+    fun decode(
+        serialized: String,
+        savedAt: Instant,
+    ): SovereigntyCacheLoadResult = try {
         val root = (SovereigntyJsonParser(serialized).parse() as? JsonObject)?.fields
             ?: return unusable("Cache root must be a JSON object")
         if (root.keys != setOf("formatVersion", "source", "records")) {
@@ -131,7 +140,7 @@ internal object SovereigntySnapshotCacheCodec {
         SovereigntySnapshotValidation.validatePublicEsi(snapshot)?.let { reason ->
             return unusable("Invalid canonical sovereignty snapshot: $reason")
         }
-        SovereigntyCacheLoadResult.Hit(snapshot)
+        SovereigntyCacheLoadResult.Hit(snapshot, savedAt)
     } catch (error: Exception) {
         SovereigntyCacheLoadResult.Unusable("Malformed sovereignty cache", error)
     }

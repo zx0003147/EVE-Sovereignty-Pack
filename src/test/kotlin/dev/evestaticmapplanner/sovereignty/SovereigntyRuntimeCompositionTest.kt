@@ -5,6 +5,12 @@ import dev.evestaticmapplanner.feature.api.FeaturePackLogger
 import dev.evestaticmapplanner.feature.api.PackRelativePath
 import dev.evestaticmapplanner.feature.api.PackStorage
 import java.nio.file.Path
+import java.nio.file.Files
+import java.nio.file.attribute.FileTime
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.time.ZoneOffset
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,12 +33,12 @@ class SovereigntyRuntimeCompositionTest {
     fun `valid production cache short circuits all Public ESI requests`() = withTempDirectory { root ->
         val storage = TestStorage(root)
         val expected = canonicalSnapshot("Cached Alliance")
+        val cachePath = storage.cachePath(SovereigntyRuntimeComposition.PUBLIC_ESI_LKG_CACHE_PATH)
         assertEquals(
             SovereigntyCacheSaveResult.Saved,
-            FileSovereigntySnapshotCache(
-                storage.cachePath(SovereigntyRuntimeComposition.PUBLIC_ESI_LKG_CACHE_PATH),
-            ).save(expected),
+            FileSovereigntySnapshotCache(cachePath).save(expected),
         )
+        Files.setLastModifiedTime(cachePath, FileTime.from(NOW.minus(Duration.ofMinutes(30))))
         var sovereigntyRequests = 0
         var namesRequests = 0
         val client = object : PublicEsiClient {
@@ -49,6 +55,7 @@ class SovereigntyRuntimeCompositionTest {
         val provider = SovereigntyRuntimeComposition(
             dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
             publicEsiClientFactory = { client },
+            clock = FIXED_CLOCK,
         ).createSnapshotProvider(storage, SilentLogger)
 
         assertIs<RemoteSovereigntySnapshotProvider>(provider)
@@ -58,9 +65,10 @@ class SovereigntyRuntimeCompositionTest {
     }
 
     @Test
-    fun `cache miss loads Public ESI once and a new composition starts from the saved LKG`() =
+    fun `production composition selects missing then fresh then stale snapshots across activations`() =
         withTempDirectory { root ->
             val storage = TestStorage(root)
+            val cachePath = storage.cachePath(SovereigntyRuntimeComposition.PUBLIC_ESI_LKG_CACHE_PATH)
             var sovereigntyRequests = 0
             var namesRequests = 0
             val onlineClient = object : PublicEsiClient {
@@ -82,13 +90,15 @@ class SovereigntyRuntimeCompositionTest {
             val first = SovereigntyRuntimeComposition(
                 dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
                 publicEsiClientFactory = { onlineClient },
+                clock = FIXED_CLOCK,
             ).createSnapshotProvider(storage, SilentLogger)
 
             assertEquals("Remote Alliance", first.loadSnapshot().records.single().allianceName)
             assertEquals(1, sovereigntyRequests)
             assertEquals(1, namesRequests)
+            Files.setLastModifiedTime(cachePath, FileTime.from(NOW.minus(Duration.ofMinutes(15))))
 
-            val offline = SovereigntyRuntimeComposition(
+            val freshActivation = SovereigntyRuntimeComposition(
                 dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
                 publicEsiClientFactory = {
                     object : PublicEsiClient {
@@ -103,11 +113,36 @@ class SovereigntyRuntimeCompositionTest {
                         }
                     }
                 },
+                clock = FIXED_CLOCK,
             ).createSnapshotProvider(storage, SilentLogger)
 
-            assertEquals("Remote Alliance", offline.loadSnapshot().records.single().allianceName)
+            assertEquals("Remote Alliance", freshActivation.loadSnapshot().records.single().allianceName)
             assertEquals(1, sovereigntyRequests)
             assertEquals(1, namesRequests)
+
+            Files.setLastModifiedTime(cachePath, FileTime.from(NOW.minus(Duration.ofHours(2))))
+            val staleActivation = SovereigntyRuntimeComposition(
+                dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
+                publicEsiClientFactory = {
+                    object : PublicEsiClient {
+                        override fun fetchSovereigntySystems(): PublicEsiPayloadResult {
+                            sovereigntyRequests += 1
+                            return PublicEsiPayloadResult.Unavailable("offline")
+                        }
+
+                        override fun resolveNames(ids: List<Int>): PublicEsiPayloadResult {
+                            namesRequests += 1
+                            return PublicEsiPayloadResult.Unavailable("must not resolve names")
+                        }
+                    }
+                },
+                clock = FIXED_CLOCK,
+            ).createSnapshotProvider(storage, SilentLogger)
+
+            assertEquals("Remote Alliance", staleActivation.loadSnapshot().records.single().allianceName)
+            assertEquals(2, sovereigntyRequests)
+            assertEquals(1, namesRequests)
+            assertEquals(NOW.minus(Duration.ofHours(2)), Files.getLastModifiedTime(cachePath).toInstant())
         }
 
     private class TestStorage(private val root: Path) : PackStorage {
@@ -134,4 +169,9 @@ class SovereigntyRuntimeCompositionTest {
     private fun canonicalSnapshot(allianceName: String) = SovereigntySnapshot(
         listOf(SovereigntyRecord(30_004_759, allianceName, null, PUBLIC_ESI_CLAIMED_STATUS)),
     )
+
+    private companion object {
+        val NOW: Instant = Instant.parse("2026-08-26T12:00:00Z")
+        val FIXED_CLOCK: Clock = Clock.fixed(NOW, ZoneOffset.UTC)
+    }
 }

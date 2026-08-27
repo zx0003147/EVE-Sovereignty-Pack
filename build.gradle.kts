@@ -25,6 +25,7 @@ tasks.jar {
             "EVE-Feature-Pack-Name" to "Sovereignty Pack",
             "EVE-Feature-Pack-Version" to "0.1.0",
             "EVE-Feature-Pack-Publisher" to "EVE Static Map Planner",
+            "EVE-Feature-API-Version" to "1",
         )
     }
 }

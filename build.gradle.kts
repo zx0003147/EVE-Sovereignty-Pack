@@ -80,6 +80,12 @@ tasks.jar {
             "EVE-Feature-API-Version" to featureApiContractVersion,
         )
     }
+    from(rootProject.files("NOTICE.md", "THIRD-PARTY-NOTICES.md")) {
+        into("META-INF/legal")
+    }
+    from(rootProject.layout.projectDirectory.dir("legal")) {
+        into("META-INF/legal")
+    }
 }
 
 val canonicalPackDirectory = layout.buildDirectory.dir("external-feature-pack/$packId")
@@ -242,6 +248,9 @@ val verifyCanonicalSovereigntyPack by tasks.registering {
                 "dev/evestaticmapplanner/sovereignty/SovereigntyFeaturePack.class",
                 "dev/evestaticmapplanner/sovereignty/PackBuildMetadata.class",
                 "sovereignty.json",
+                "META-INF/legal/NOTICE.md",
+                "META-INF/legal/THIRD-PARTY-NOTICES.md",
+                "META-INF/legal/CCP-EVE-DATA-PROVENANCE.md",
             )
             check(entries.containsAll(expectedEntries)) {
                 "Pack is missing expected implementation entries: ${expectedEntries - entries.toSet()}"

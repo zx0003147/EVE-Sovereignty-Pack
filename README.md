@@ -102,6 +102,8 @@ No publication, release, tag, or GitHub repository is created by this CI foundat
 
 ## Publication status
 
-No public repository URL, published package, release, or source-code license is claimed. `NOTICE.md` contains factual
-third-party and trademark notices; it is not a source license. Public release remains blocked until a source license
-is explicitly chosen.
+No public repository URL, published package, release, or source-code license is claimed. `NOTICE.md` and
+`THIRD-PARTY-NOTICES.md` contain factual third-party, data-provenance, and trademark notices; neither is a source
+license. The repository may remain private and a compliant binary may be shared under the applicable third-party
+terms without choosing a license for the original source. Public source publication remains blocked until a source
+license is explicitly chosen.

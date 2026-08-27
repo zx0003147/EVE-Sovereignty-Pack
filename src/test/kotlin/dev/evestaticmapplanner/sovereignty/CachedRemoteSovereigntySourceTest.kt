@@ -51,6 +51,29 @@ class CachedRemoteSovereigntySourceTest {
     }
 
     @Test
+    fun `fresh legacy v1 cache remains usable but logs explicit identity fallback`() = withTempDirectory { root ->
+        val path = root.resolve("cache/public-esi-lkg.json")
+        Files.createDirectories(path.parent)
+        Files.writeString(
+            path,
+            """{"formatVersion":1,"source":"PUBLIC_ESI","records":[{"systemId":30004759,"allianceName":"Legacy Alliance","corporationName":null,"sovereigntyStatus":"Claimed"}]}""",
+        )
+        Files.setLastModifiedTime(path, FileTime.from(NOW))
+        val logger = RecordingLogger()
+        var remoteCalls = 0
+        val source = source(path, logger) {
+            remoteCalls += 1
+            RemoteSnapshotResult.Unavailable("must not be called")
+        }
+
+        val record = assertIs<RemoteSnapshotResult.Success>(source.fetchSnapshot()).snapshot.records.single()
+
+        assertEquals(null, record.allianceId)
+        assertEquals(0, remoteCalls)
+        assertTrue(logger.events.any { it.level == FeaturePackLogLevel.WARN && it.message.contains("v1") })
+    }
+
+    @Test
     fun `cache age one hour plus one nanosecond is stale and calls remote once`() {
         val cached = snapshot("Stale Boundary Alliance")
         val cache = RecordingCache(
@@ -154,6 +177,20 @@ class CachedRemoteSovereigntySourceTest {
     }
 
     @Test
+    fun `remote success missing alliance ID is rejected and not cached`() {
+        val invalid = SovereigntySnapshot(
+            listOf(SovereigntyRecord(30_004_759, "Name-only Alliance", null, PUBLIC_ESI_CLAIMED_STATUS)),
+        )
+        val cache = RecordingCache(SovereigntyCacheLoadResult.Miss)
+        val source = source(cache) { RemoteSnapshotResult.Success(invalid) }
+
+        val result = assertIs<RemoteSnapshotResult.Invalid>(source.fetchSnapshot())
+
+        assertTrue(result.reason.contains("missing allianceId"))
+        assertEquals(0, cache.saveCalls)
+    }
+
+    @Test
     fun `stale cache save failure returns valid remote snapshot and keeps prior LKG`() {
         val stale = snapshot("Stale Alliance")
         val replacement = snapshot("In-memory Alliance")
@@ -199,7 +236,7 @@ class CachedRemoteSovereigntySourceTest {
 
     @Test
     fun `unsupported cache version is unusable and replaced after one remote success`() = withTempDirectory { root ->
-        assertUnusableCacheIsReplaced(root, """{"formatVersion":2,"source":"PUBLIC_ESI","records":[]}""")
+        assertUnusableCacheIsReplaced(root, """{"formatVersion":3,"source":"PUBLIC_ESI","records":[]}""")
     }
 
     @Test
@@ -367,7 +404,7 @@ class CachedRemoteSovereigntySourceTest {
     }
 
     private fun snapshot(allianceName: String) = SovereigntySnapshot(
-        listOf(SovereigntyRecord(30_004_759, allianceName, null, PUBLIC_ESI_CLAIMED_STATUS)),
+        listOf(SovereigntyRecord(30_004_759, allianceName, null, PUBLIC_ESI_CLAIMED_STATUS, 99_000_001)),
     )
 
     private companion object {

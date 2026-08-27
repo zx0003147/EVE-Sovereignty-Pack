@@ -49,12 +49,17 @@ private fun Map<String, JsonValue>.toSovereigntyRecord(): SovereigntyRecord? {
         ?: return null
     val allianceName = requiredText("allianceName") ?: return null
     val sovereigntyStatus = requiredText("sovereigntyStatus") ?: return null
+    val allianceId = when (val value = get("allianceId")) {
+        null, JsonNull -> null
+        is JsonNumber -> value.longValueOrNull()?.takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt() ?: return null
+        else -> return null
+    }
     val corporationName = when (val value = get("corporationName")) {
         null, JsonNull -> null
         is JsonString -> value.value.takeIf(::isValidText) ?: return null
         else -> return null
     }
-    return SovereigntyRecord(systemId, allianceName, corporationName, sovereigntyStatus)
+    return SovereigntyRecord(systemId, allianceName, corporationName, sovereigntyStatus, allianceId)
 }
 
 private fun Map<String, JsonValue>.requiredText(key: String): String? =

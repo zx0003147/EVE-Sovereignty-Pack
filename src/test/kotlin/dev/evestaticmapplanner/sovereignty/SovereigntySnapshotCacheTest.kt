@@ -17,8 +17,8 @@ class SovereigntySnapshotCacheTest {
     fun `valid snapshot round trips through the filesystem cache`() = withTempDirectory { root ->
         val cache = FileSovereigntySnapshotCache(root.resolve("cache/public-esi-lkg.json"))
         val expected = snapshot(
-            SovereigntyRecord(30_004_760, "Alliance \"Two\"", null, PUBLIC_ESI_CLAIMED_STATUS),
-            SovereigntyRecord(30_004_759, "Alliance One", "Corporation \\ One", PUBLIC_ESI_CLAIMED_STATUS),
+            SovereigntyRecord(30_004_760, "Alliance \"Two\"", null, PUBLIC_ESI_CLAIMED_STATUS, 99_000_002),
+            SovereigntyRecord(30_004_759, "Alliance One", "Corporation \\ One", PUBLIC_ESI_CLAIMED_STATUS, 99_000_001),
         )
 
         assertEquals(SovereigntyCacheSaveResult.Saved, cache.save(expected))
@@ -49,7 +49,7 @@ class SovereigntySnapshotCacheTest {
 
     @Test
     fun `unsupported format version is unusable`() = withCacheText(
-        """{"formatVersion":2,"source":"PUBLIC_ESI","records":[]}""",
+        """{"formatVersion":3,"source":"PUBLIC_ESI","records":[]}""",
     ) { cache ->
         val result = assertIs<SovereigntyCacheLoadResult.Unusable>(cache.load())
         assertTrue(result.reason.contains("formatVersion"))
@@ -74,6 +74,16 @@ class SovereigntySnapshotCacheTest {
     ) { cache ->
         val result = assertIs<SovereigntyCacheLoadResult.Unusable>(cache.load())
         assertTrue(result.reason.contains("duplicate systemId 30004759"))
+    }
+
+    @Test
+    fun `legacy v1 cache remains readable with explicit missing alliance identity`() = withCacheText(
+        cacheJson(validRecordJson("Legacy Alliance")),
+    ) { cache ->
+        val record = assertIs<SovereigntyCacheLoadResult.Hit>(cache.load()).snapshot.records.single()
+
+        assertEquals("Legacy Alliance", record.allianceName)
+        assertEquals(null, record.allianceId)
     }
 
     @Test
@@ -130,7 +140,7 @@ class SovereigntySnapshotCacheTest {
     private fun snapshot(vararg records: SovereigntyRecord) = SovereigntySnapshot(records.asList())
 
     private fun record(allianceName: String) =
-        SovereigntyRecord(30_004_759, allianceName, null, PUBLIC_ESI_CLAIMED_STATUS)
+        SovereigntyRecord(30_004_759, allianceName, null, PUBLIC_ESI_CLAIMED_STATUS, 99_000_001)
 
     private fun validRecordJson(allianceName: String) =
         """{"systemId":30004759,"allianceName":"$allianceName","corporationName":null,"sovereigntyStatus":"Claimed"}"""

@@ -167,7 +167,7 @@ class SovereigntyRuntimeCompositionTest {
     }
 
     private fun canonicalSnapshot(allianceName: String) = SovereigntySnapshot(
-        listOf(SovereigntyRecord(30_004_759, allianceName, null, PUBLIC_ESI_CLAIMED_STATUS)),
+        listOf(SovereigntyRecord(30_004_759, allianceName, null, PUBLIC_ESI_CLAIMED_STATUS, 99_000_001)),
     )
 
     private companion object {

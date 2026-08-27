@@ -1,12 +1,14 @@
 [
   {
     "systemId": 30004759,
+    "allianceId": 1354830081,
     "allianceName": "Goonswarm Federation",
     "corporationName": "SV-1 Fixture Corporation",
     "sovereigntyStatus": "Claimed (static fixture)"
   },
   {
     "systemId": 30004712,
+    "allianceId": 99003581,
     "allianceName": "Fraternity",
     "corporationName": null,
     "sovereigntyStatus": "Contested (static fixture)"

@@ -1,7 +1,10 @@
 package dev.evestaticmapplanner.sovereignty
 
 internal object SovereigntySnapshotValidation {
-    fun validatePublicEsi(snapshot: SovereigntySnapshot): String? {
+    fun validatePublicEsi(
+        snapshot: SovereigntySnapshot,
+        allowLegacyMissingAllianceIds: Boolean = false,
+    ): String? {
         snapshot.metadata.failureMessage?.let { return "snapshot contains failure metadata" }
         if (snapshot.metadata.ignoredRecordCount != 0) return "snapshot contains ignored records"
         if (snapshot.records.isEmpty()) return "snapshot contains no sovereignty records"
@@ -17,6 +20,12 @@ internal object SovereigntySnapshotValidation {
             }
             if (!record.allianceName.isCanonicalText()) {
                 return "$context has an empty or invalid allianceName"
+            }
+            if (record.allianceId == null && !allowLegacyMissingAllianceIds) {
+                return "$context is missing allianceId"
+            }
+            if (record.allianceId != null && record.allianceId <= 0) {
+                return "$context has invalid allianceId ${record.allianceId}"
             }
             if (record.corporationName?.isCanonicalText() == false) {
                 return "$context has an empty or invalid corporationName"

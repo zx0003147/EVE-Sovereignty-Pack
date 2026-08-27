@@ -16,6 +16,7 @@ internal class CachedRemoteSovereigntySource(
     override fun fetchSnapshot(): RemoteSnapshotResult {
         val staleFallback = when (val cached = cache.load()) {
             is SovereigntyCacheLoadResult.Hit -> if (isFresh(cached)) {
+                logLegacyIdentityIfPresent(cached.snapshot)
                 logger.log(
                     FeaturePackLogLevel.INFO,
                     "Using fresh cached PUBLIC_ESI sovereignty snapshot",
@@ -23,6 +24,7 @@ internal class CachedRemoteSovereigntySource(
                 )
                 return RemoteSnapshotResult.Success(cached.snapshot)
             } else {
+                logLegacyIdentityIfPresent(cached.snapshot)
                 logger.log(
                     FeaturePackLogLevel.INFO,
                     "Cached PUBLIC_ESI sovereignty snapshot is stale; attempting one startup refresh",
@@ -94,6 +96,16 @@ internal class CachedRemoteSovereigntySource(
     private fun isFresh(cached: SovereigntyCacheLoadResult.Hit): Boolean {
         val age = Duration.between(cached.savedAt, clock.instant())
         return age.isNegative || age <= freshnessThreshold
+    }
+
+    private fun logLegacyIdentityIfPresent(snapshot: SovereigntySnapshot) {
+        if (snapshot.records.any { it.allianceId == null }) {
+            logger.log(
+                FeaturePackLogLevel.WARN,
+                "Using backwards-compatible v1 PUBLIC_ESI LKG identity fallback; a successful startup refresh will restore alliance-ID visual identity",
+                null,
+            )
+        }
     }
 
     internal companion object {

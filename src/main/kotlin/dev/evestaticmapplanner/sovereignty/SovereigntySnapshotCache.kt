@@ -87,7 +87,8 @@ private fun replaceFromTemporaryFile(temporaryPath: Path, finalPath: Path) {
 }
 
 internal object SovereigntySnapshotCacheCodec {
-    const val FORMAT_VERSION = 1
+    const val FORMAT_VERSION = 2
+    private const val LEGACY_FORMAT_VERSION = 1
     const val SOURCE = "PUBLIC_ESI"
 
     fun encode(snapshot: SovereigntySnapshot): String {
@@ -101,6 +102,7 @@ internal object SovereigntySnapshotCacheCodec {
             append("  \"records\": [\n")
             snapshot.records.sortedBy(SovereigntyRecord::systemId).forEachIndexed { index, record ->
                 append("    {\"systemId\": ").append(record.systemId)
+                append(", \"allianceId\": ").append(requireNotNull(record.allianceId))
                 append(", \"allianceName\": ").appendJsonString(record.allianceName)
                 append(", \"corporationName\": ")
                 if (record.corporationName == null) append("null") else appendJsonString(record.corporationName)
@@ -125,7 +127,7 @@ internal object SovereigntySnapshotCacheCodec {
         }
         val formatVersion = (root["formatVersion"] as? JsonNumber)?.longValueOrNull()
             ?: return unusable("Cache formatVersion must be an integer")
-        if (formatVersion != FORMAT_VERSION.toLong()) {
+        if (formatVersion !in setOf(LEGACY_FORMAT_VERSION.toLong(), FORMAT_VERSION.toLong())) {
             return unusable("Unsupported sovereignty cache formatVersion $formatVersion")
         }
         val source = (root["source"] as? JsonString)?.value
@@ -134,10 +136,13 @@ internal object SovereigntySnapshotCacheCodec {
         val values = (root["records"] as? JsonArray)?.values
             ?: return unusable("Cache records must be an array")
         val records = values.mapIndexed { index, value ->
-            decodeRecord(value) ?: return unusable("Cache records[$index] is malformed")
+            decodeRecord(value, formatVersion.toInt()) ?: return unusable("Cache records[$index] is malformed")
         }
         val snapshot = SovereigntySnapshot(records)
-        SovereigntySnapshotValidation.validatePublicEsi(snapshot)?.let { reason ->
+        SovereigntySnapshotValidation.validatePublicEsi(
+            snapshot,
+            allowLegacyMissingAllianceIds = formatVersion == LEGACY_FORMAT_VERSION.toLong(),
+        )?.let { reason ->
             return unusable("Invalid canonical sovereignty snapshot: $reason")
         }
         SovereigntyCacheLoadResult.Hit(snapshot, savedAt)
@@ -145,21 +150,32 @@ internal object SovereigntySnapshotCacheCodec {
         SovereigntyCacheLoadResult.Unusable("Malformed sovereignty cache", error)
     }
 
-    private fun decodeRecord(value: JsonValue): SovereigntyRecord? {
+    private fun decodeRecord(value: JsonValue, formatVersion: Int): SovereigntyRecord? {
         val fields = (value as? JsonObject)?.fields ?: return null
-        if (fields.keys != setOf("systemId", "allianceName", "corporationName", "sovereigntyStatus")) return null
+        val expectedFields = if (formatVersion == LEGACY_FORMAT_VERSION) {
+            setOf("systemId", "allianceName", "corporationName", "sovereigntyStatus")
+        } else {
+            setOf("systemId", "allianceId", "allianceName", "corporationName", "sovereigntyStatus")
+        }
+        if (fields.keys != expectedFields) return null
         val systemId = (fields["systemId"] as? JsonNumber)?.longValueOrNull()
             ?.takeIf { it in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() }
             ?.toInt()
             ?: return null
         val allianceName = (fields["allianceName"] as? JsonString)?.value ?: return null
+        val allianceId = if (formatVersion == LEGACY_FORMAT_VERSION) null else {
+            (fields["allianceId"] as? JsonNumber)?.longValueOrNull()
+                ?.takeIf { it in 1..Int.MAX_VALUE.toLong() }
+                ?.toInt()
+                ?: return null
+        }
         val corporationName = when (val corporation = fields["corporationName"]) {
             JsonNull -> null
             is JsonString -> corporation.value
             else -> return null
         }
         val sovereigntyStatus = (fields["sovereigntyStatus"] as? JsonString)?.value ?: return null
-        return SovereigntyRecord(systemId, allianceName, corporationName, sovereigntyStatus)
+        return SovereigntyRecord(systemId, allianceName, corporationName, sovereigntyStatus, allianceId)
     }
 
     private fun unusable(reason: String) = SovereigntyCacheLoadResult.Unusable(reason)

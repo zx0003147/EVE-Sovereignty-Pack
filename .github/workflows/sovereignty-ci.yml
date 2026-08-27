@@ -1,0 +1,71 @@
+name: Sovereignty CI Foundation
+
+# Feature API 1.0.0 is not published yet. Keep this workflow manual-only until
+# an authorized production Maven repository and package permissions exist.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  FEATURE_API_REPOSITORY_URL: ${{ vars.FEATURE_API_MAVEN_REPOSITORY_URL }}
+
+jobs:
+  standalone-coordinate-build:
+    name: Standalone coordinate build on Windows / JDK 25
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Sovereignty sources
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle and validate wrappers
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          validate-wrappers: true
+
+      - name: Verify published Feature API prerequisite
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:FEATURE_API_REPOSITORY_URL)) {
+            throw "Feature API 1.0.0 is not published. Configure FEATURE_API_MAVEN_REPOSITORY_URL only after authorized publication."
+          }
+
+      - name: Clean and test against Feature API coordinates
+        shell: pwsh
+        run: >-
+          .\gradlew.bat --no-daemon --console=plain
+          -PfeatureApiGitHubPackagesRepository="$env:FEATURE_API_REPOSITORY_URL"
+          clean test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check standalone boundaries
+        shell: pwsh
+        run: >-
+          .\gradlew.bat --no-daemon --console=plain
+          -PfeatureApiGitHubPackagesRepository="$env:FEATURE_API_REPOSITORY_URL"
+          check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package canonical external Feature Pack
+        shell: pwsh
+        run: >-
+          .\gradlew.bat --no-daemon --console=plain
+          -PfeatureApiGitHubPackagesRepository="$env:FEATURE_API_REPOSITORY_URL"
+          packageExternalFeaturePack
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

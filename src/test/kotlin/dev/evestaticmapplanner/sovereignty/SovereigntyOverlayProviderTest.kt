@@ -16,7 +16,14 @@ class SovereigntyOverlayProviderTest {
         with(provider.snapshot().entries.first { it.systemId == 30_004_759 }) {
             assertEquals("Goonswarm Federation", title)
             assertEquals("Claimed (static fixture)", subtitle)
-            assertEquals("ring-color:${SovereigntyVisualIdentity.GOONSWARM_YELLOW}", value)
+            assertEquals(
+                "owner-key:alliance:${SovereigntyVisualIdentity.GOONSWARM_ALLIANCE_ID};" +
+                    "presentation-color:${SovereigntyVisualIdentity.GOONSWARM_YELLOW};" +
+                    "presentation-emblem-key:eve-alliance:${SovereigntyVisualIdentity.GOONSWARM_ALLIANCE_ID};" +
+                    "presentation-emblem-url:https://images.evetech.net/alliances/" +
+                    "${SovereigntyVisualIdentity.GOONSWARM_ALLIANCE_ID}/logo?size=256",
+                value,
+            )
         }
     }
 }

@@ -160,6 +160,7 @@ class PublicEsiSovereigntySourceTest {
         assertEquals(30_004_759, overlayEntry.systemId)
         assertEquals("Remote Alliance", overlayEntry.title)
         assertEquals("Claimed", overlayEntry.subtitle)
+        assertTrue(overlayEntry.value!!.startsWith("owner-key:alliance:99003581;presentation-color:"))
 
         val fields = SovereigntySystemInfoProvider(repository)
             .provide(30_004_759)

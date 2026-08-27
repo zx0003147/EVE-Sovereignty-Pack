@@ -55,7 +55,7 @@ internal class JdkPublicEsiClient(
         .uri(baseUri.resolve(relativePath))
         .timeout(REQUEST_TIMEOUT)
         .header("Accept", "application/json")
-        .header("User-Agent", USER_AGENT)
+        .header("User-Agent", PackBuildMetadata.USER_AGENT)
         .header("X-Compatibility-Date", COMPATIBILITY_DATE)
 
     private fun execute(
@@ -84,7 +84,6 @@ internal class JdkPublicEsiClient(
 
     private companion object {
         const val COMPATIBILITY_DATE = "2026-05-19"
-        const val USER_AGENT = "EVE-Static-Map-Planner/0.3.0 sovereignty-pack/0.1.0"
         val CONNECT_TIMEOUT: Duration = Duration.ofSeconds(10)
         val REQUEST_TIMEOUT: Duration = Duration.ofSeconds(30)
 

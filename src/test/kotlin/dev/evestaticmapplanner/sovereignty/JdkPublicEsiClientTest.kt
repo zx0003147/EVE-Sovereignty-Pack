@@ -29,6 +29,10 @@ class JdkPublicEsiClientTest {
             request.uri().toString(),
         )
         assertEquals("2026-05-19", request.headers().firstValue("X-Compatibility-Date").orElse(null))
+        assertEquals(
+            "EVE-Sovereignty-Pack/${PackBuildMetadata.PACK_VERSION}",
+            request.headers().firstValue("User-Agent").orElse(null),
+        )
         assertFalse(request.headers().firstValue("Authorization").isPresent)
     }
 

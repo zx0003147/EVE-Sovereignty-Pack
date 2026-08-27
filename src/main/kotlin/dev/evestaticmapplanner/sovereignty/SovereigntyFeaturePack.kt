@@ -24,7 +24,7 @@ class SovereigntyFeaturePack internal constructor(
     override fun descriptor() = FeaturePackDescriptor(
         packId = PackId("sovereignty.pack"),
         displayName = "Sovereignty Pack",
-        packVersion = PackVersion("0.1.0"),
+        packVersion = PackVersion(PackBuildMetadata.PACK_VERSION),
         publisher = "EVE Static Map Planner",
     )
 

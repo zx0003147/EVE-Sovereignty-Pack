@@ -18,6 +18,7 @@ import dev.evestaticmapplanner.feature.api.SystemInfoRegistration
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistry
 import java.nio.file.Path
 import java.util.ServiceLoader
+import java.util.jar.JarFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -30,8 +31,15 @@ class SovereigntyFeaturePackTest {
 
         assertEquals("sovereignty.pack", descriptor.packId.value)
         assertEquals("Sovereignty Pack", descriptor.displayName)
-        assertEquals("0.1.0", descriptor.packVersion.value)
+        assertEquals(PackBuildMetadata.PACK_VERSION, descriptor.packVersion.value)
         assertEquals("EVE Static Map Planner", descriptor.publisher)
+
+        val canonicalPackJar = Path.of(checkNotNull(System.getProperty("canonical.pack.jar"))).toFile()
+        val manifestPackVersion = JarFile(canonicalPackJar).use { jar ->
+            checkNotNull(jar.manifest).mainAttributes.getValue("EVE-Feature-Pack-Version")
+        }
+        assertEquals(PackBuildMetadata.PACK_VERSION, manifestPackVersion)
+        assertEquals(manifestPackVersion, descriptor.packVersion.value)
     }
 
     @Test

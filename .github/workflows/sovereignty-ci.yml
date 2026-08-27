@@ -1,7 +1,6 @@
 name: Sovereignty CI Foundation
 
-# Feature API 1.0.0 is not published yet. Keep this workflow manual-only until
-# an authorized production Maven repository and package permissions exist.
+# Keep this cross-repository package build manual-only.
 on:
   workflow_dispatch:
 
@@ -10,7 +9,7 @@ permissions:
   packages: read
 
 env:
-  FEATURE_API_REPOSITORY_URL: ${{ vars.FEATURE_API_MAVEN_REPOSITORY_URL }}
+  FEATURE_API_MAVEN_REPOSITORY_URL: ${{ vars.FEATURE_API_MAVEN_REPOSITORY_URL }}
 
 jobs:
   standalone-coordinate-build:
@@ -36,36 +35,44 @@ jobs:
           cache-provider: basic
           validate-wrappers: true
 
-      - name: Verify published Feature API prerequisite
+      - name: Verify Feature API package access configuration
         shell: pwsh
+        env:
+          FEATURE_API_PACKAGES_TOKEN: ${{ secrets.FEATURE_API_PACKAGES_TOKEN }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:FEATURE_API_REPOSITORY_URL)) {
-            throw "Feature API 1.0.0 is not published. Configure FEATURE_API_MAVEN_REPOSITORY_URL only after authorized publication."
+          if ([string]::IsNullOrWhiteSpace($env:FEATURE_API_MAVEN_REPOSITORY_URL)) {
+            throw "Configure repository variable FEATURE_API_MAVEN_REPOSITORY_URL before running Sovereignty CI."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:FEATURE_API_PACKAGES_TOKEN)) {
+            throw "Configure repository secret FEATURE_API_PACKAGES_TOKEN before running Sovereignty CI."
           }
 
       - name: Clean and test against Feature API coordinates
         shell: pwsh
         run: >-
           .\gradlew.bat --no-daemon --console=plain
-          -PfeatureApiGitHubPackagesRepository="$env:FEATURE_API_REPOSITORY_URL"
+          -PfeatureApiGitHubPackagesRepository="$env:FEATURE_API_MAVEN_REPOSITORY_URL"
           clean test
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.FEATURE_API_PACKAGES_TOKEN }}
 
       - name: Check standalone boundaries
         shell: pwsh
         run: >-
           .\gradlew.bat --no-daemon --console=plain
-          -PfeatureApiGitHubPackagesRepository="$env:FEATURE_API_REPOSITORY_URL"
+          -PfeatureApiGitHubPackagesRepository="$env:FEATURE_API_MAVEN_REPOSITORY_URL"
           check
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.FEATURE_API_PACKAGES_TOKEN }}
 
       - name: Package canonical external Feature Pack
         shell: pwsh
         run: >-
           .\gradlew.bat --no-daemon --console=plain
-          -PfeatureApiGitHubPackagesRepository="$env:FEATURE_API_REPOSITORY_URL"
+          -PfeatureApiGitHubPackagesRepository="$env:FEATURE_API_MAVEN_REPOSITORY_URL"
           packageExternalFeaturePack
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.FEATURE_API_PACKAGES_TOKEN }}

@@ -2,7 +2,7 @@
 
 This file is not a license for the EVE Sovereignty Pack's original source.
 
-The canonical `pack.jar` is thin: it contains Pack-owned bytecode and resources only. Feature API `1.0.0` and Kotlin stdlib `2.3.0` are compile-only and are not bundled. The Pack contains no Core, Compose, SQLite, MCP, OAuth, or other third-party library bytecode.
+The canonical `pack.jar` is thin: it contains Pack-owned bytecode and resources only. Feature API `2.0.0` and Kotlin stdlib `2.3.0` are compile-only and are not bundled. The Pack contains no Core, Compose, SQLite, MCP, OAuth, or other third-party library bytecode.
 
 The embedded `sovereignty.json` fallback is a small project-authored fixture containing selected EVE universe and alliance identifiers/names plus synthetic scenario fields. Its exact provenance and classification are recorded in `legal/CCP-EVE-DATA-PROVENANCE.md`. It is not a captured ESI response and is not represented as a current sovereignty snapshot.
 

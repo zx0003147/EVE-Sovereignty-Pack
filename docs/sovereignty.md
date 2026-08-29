@@ -122,7 +122,7 @@ storage and UI remain Host-owned, while the Pack supplies the metadata that make
 ## Storage and dependency boundary
 
 The Pack uses only paths mediated by its Feature API `PackStorage` and never reaches into Core databases or services.
-Its committed build declares `dev.evestaticmapplanner:feature-api:1.0.0` as `compileOnly` and test input. It has no
+Its committed build declares `dev.evestaticmapplanner:feature-api:2.0.0` as `compileOnly` and test input. It has no
 Gradle project dependency on Feature API, permanent composite include, sibling path, or Core source dependency.
 Optional developer composite substitution remains command-line-only.
 

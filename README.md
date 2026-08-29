@@ -11,10 +11,11 @@ Core does not bundle this Pack. This repository builds the canonical standalone 
 ## Requirements
 
 - JDK 25
-- Feature API runtime contract: `1` (frozen)
-- Build artifact dependency: `dev.evestaticmapplanner:feature-api:1.0.0`
-- Pack version: `0.1.0`
+- Feature API runtime contract: `2` (frozen)
+- Build artifact dependency: `dev.evestaticmapplanner:feature-api:2.0.0`
+- Pack version: `0.2.0`
 - A Maven repository containing the Feature API artifact
+- A corresponding EVE Static Map Planner release that hosts Feature API runtime contract `2`
 
 The Pack consumes Feature API as a Maven coordinate. It has no Core source or Gradle project dependency.
 
@@ -34,7 +35,7 @@ See `docs/sovereignty.md` for the accepted data, cache, lifecycle, and presentat
 
 ## Build
 
-For local development, pass a Maven repository containing Feature API `1.0.0`. The value is an artifact repository,
+For local development, pass a Maven repository containing Feature API `2.0.0`. The value is an artifact repository,
 not a Core checkout or project dependency.
 
 ```powershell
@@ -93,7 +94,7 @@ Preferences UI behavior.
 ## CI foundation
 
 `.github/workflows/sovereignty-ci.yml` contains the final standalone coordinate-consumption build shape, but is
-manual-only until Feature API `1.0.0` is published to an authorized production Maven repository. Before dispatch, the
+manual-only until Feature API `2.0.0` is published to an authorized production Maven repository. Before dispatch, the
 repository variable `FEATURE_API_MAVEN_REPOSITORY_URL` must identify that repository and package read permissions must
 be configured. The workflow deliberately fails its prerequisite check when the variable is absent; it never checks
 out Core source and does not use a permanent composite build.

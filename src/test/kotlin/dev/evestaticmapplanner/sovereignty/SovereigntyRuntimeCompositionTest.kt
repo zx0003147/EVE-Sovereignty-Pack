@@ -41,6 +41,7 @@ class SovereigntyRuntimeCompositionTest {
         Files.setLastModifiedTime(cachePath, FileTime.from(NOW.minus(Duration.ofMinutes(30))))
         var sovereigntyRequests = 0
         var namesRequests = 0
+        var clientCreations = 0
         val client = object : PublicEsiClient {
             override fun fetchSovereigntySystems(): PublicEsiPayloadResult {
                 sovereigntyRequests += 1
@@ -54,12 +55,16 @@ class SovereigntyRuntimeCompositionTest {
         }
         val provider = SovereigntyRuntimeComposition(
             dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
-            publicEsiClientFactory = { client },
+            publicEsiClientFactory = {
+                clientCreations += 1
+                client
+            },
             clock = FIXED_CLOCK,
         ).createSnapshotProvider(storage, SilentLogger)
 
         assertIs<RemoteSovereigntySnapshotProvider>(provider)
         assertEquals(expected.records, provider.loadSnapshot().records)
+        assertEquals(0, clientCreations)
         assertEquals(0, sovereigntyRequests)
         assertEquals(0, namesRequests)
     }

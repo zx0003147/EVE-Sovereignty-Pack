@@ -77,16 +77,19 @@ class SovereigntyFeaturePackTest {
     }
 
     @Test
-    fun `one public ESI activation shares one loaded snapshot across consumers`() {
+    fun `one public ESI activation shares one fresh cached snapshot across consumers`() {
         val client = RecordingPublicEsiClient()
         val context = RecordingContext()
+        val cached = SovereigntySnapshot(
+            listOf(SovereigntyRecord(30_004_759, "Cached Alliance", null, PUBLIC_ESI_CLAIMED_STATUS, 99_000_001)),
+        )
         val pack = SovereigntyFeaturePack(
             SovereigntyRuntimeComposition(
                 dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
                 publicEsiClientFactory = { client },
                 cacheFactory = {
                     object : SovereigntySnapshotCache {
-                        override fun load() = SovereigntyCacheLoadResult.Miss
+                        override fun load() = SovereigntyCacheLoadResult.Hit(cached, java.time.Instant.now())
                         override fun save(snapshot: SovereigntySnapshot) = SovereigntyCacheSaveResult.Saved
                     }
                 },
@@ -99,11 +102,11 @@ class SovereigntyFeaturePackTest {
             context.systemInfoRegistry.provider?.provide(30_004_759)
         }
 
-        assertEquals(1, client.sovereigntyRequestCount)
-        assertEquals(1, client.namesRequestCount)
-        assertEquals("Remote Alliance", context.overlayRegistry.provider?.snapshot()?.entries?.single()?.title)
+        assertEquals(0, client.sovereigntyRequestCount)
+        assertEquals(0, client.namesRequestCount)
+        assertEquals("Cached Alliance", context.overlayRegistry.provider?.snapshot()?.entries?.single()?.title)
         assertEquals(
-            "Remote Alliance",
+            "Cached Alliance",
             context.systemInfoRegistry.provider?.provide(30_004_759)?.sections?.single()?.fields?.first()?.value,
         )
         session.close()

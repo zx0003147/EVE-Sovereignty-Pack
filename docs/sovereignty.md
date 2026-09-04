@@ -44,7 +44,7 @@ Writes use a complete temporary file followed by replacement; a failed write doe
 - LKG v2 is the current write format and includes positive `allianceId` values.
 - Structurally and semantically valid v1 files remain readable for backward compatibility.
 - LKG v1 has no alliance IDs, so the Pack logs the legacy identity fallback and derives deterministic name-based
-  presentation identity only until a later successful startup refresh writes v2.
+  presentation identity only until a later successful background refresh writes v2.
 - Missing identity is never invented or represented as a real ESI alliance ID.
 - Unknown cache versions, extra/missing fields, malformed JSON, invalid records, or a wrong source marker are unusable
   and are never presented as fallback data.
@@ -53,26 +53,32 @@ The cache belongs only to this Pack. It does not write Sovereignty state into `s
 
 ## Startup freshness and offline fallback
 
-Snapshot selection happens synchronously once during Pack startup:
+Pack startup performs only local cache work and provider registration:
 
 - A valid LKG whose successful file modification time is at most one hour old is fresh and avoids ESI entirely.
 - The exact one-hour boundary is fresh. A future timestamp caused by a local clock adjustment is also treated as fresh.
-- A stale valid LKG triggers exactly one remote refresh attempt.
-- A fully valid remote snapshot becomes the session snapshot. When persistence succeeds it replaces the LKG.
+- A stale valid LKG is published immediately and triggers exactly one background refresh attempt.
+- A missing or unusable cache publishes an empty provider state and triggers one background recovery attempt.
+- A fully valid remote snapshot atomically replaces the in-memory session snapshot. When persistence succeeds it also
+  replaces the LKG.
 - If persistence fails, the valid remote snapshot is still used in memory for that session and the old LKG is retained.
 - If ESI is unavailable or invalid, a stale valid LKG remains the fallback and is not touched.
-- A missing or unusable cache triggers one startup attempt. If no valid remote or cached snapshot exists, providers
-  remain registered with empty data and the failure is logged.
+- If no valid remote or cached snapshot exists, providers remain registered with empty data and the failure is logged.
 - Production never silently substitutes the embedded test fixture for failed PUBLIC_ESI acquisition.
 
 The one-hour threshold is Pack product policy, not a CCP freshness guarantee.
 
-## Restart semantics
+## Refresh and lifecycle semantics
 
-The selected snapshot is immutable for the Pack session. After the Overlay and System Info providers register, there
-is no polling, retry loop, timer, scheduler, background worker, live snapshot replacement, or Overlay invalidation.
-Disabling/re-enabling the Pack or restarting the application starts a new selection. Live refresh requires future
-platform lifecycle/invalidation capabilities and is intentionally outside v1.
+Feature API 2's Dynamic Overlay capability owns the bounded background callback. The Pack requests at most one refresh
+per activation; it has no polling loop or timer. A successful callback validates the complete remote snapshot, writes a
+complete temporary cache file followed by atomic/replace move, swaps the Pack repository state, and invalidates Overlay
+and System Info snapshots.
+
+Disable or application shutdown closes the Pack session. The session first closes its refresh commit gate and HTTP
+client, then unregisters providers. An in-flight callback may finish transport cleanup, but cannot write cache, publish
+state, or reactivate a closed provider. Re-enabling the Pack or restarting the application creates a new activation and
+may make a new refresh attempt.
 
 ## Overlay and System Info providers
 
@@ -130,4 +136,5 @@ Optional developer composite substitution remains command-line-only.
 
 Tests use injected HTTP senders, fake clocks, temporary Pack storage, embedded fixtures, and deterministic local
 snapshots. They cover PUBLIC_ESI validation, LKG v1/v2 compatibility, freshness boundaries, offline fallback,
-repository/provider behavior, identity metadata, and canonical standalone JAR packaging without live Internet.
+background replacement, duplicate invalidation, cancellation/disable races, cache atomicity, repository/provider
+behavior, identity metadata, and canonical standalone JAR packaging without live Internet.

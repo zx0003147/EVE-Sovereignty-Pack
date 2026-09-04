@@ -56,6 +56,10 @@ internal class PublicEsiSovereigntySource(
         return RemoteSnapshotResult.Success(SovereigntySnapshot(records))
     }
 
+    override fun close() {
+        client.close()
+    }
+
     private fun resolveOwnerNames(expectedCategories: Map<Int, String>): OwnerNameResolutionResult {
         if (expectedCategories.isEmpty()) return OwnerNameResolutionResult.Success(emptyMap())
 

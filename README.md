@@ -28,8 +28,9 @@ The Pack consumes Feature API as a Maven coordinate. It has no Core source or Gr
 - Alliance color, territory, and emblem presentation metadata for Core's generic renderer.
 - Sovereignty Preferences integration through Host behavior when the installed provider is available.
 
-The Pack selects one ownership snapshot during startup. It does not poll or live-refresh ownership data during the
-session; restart the Pack or application to perform another startup selection.
+The Pack publishes a fresh or stale valid LKG during startup without waiting for the network. When the cache is stale,
+missing, or unusable, it requests one lifecycle-owned background refresh through Feature API 2. A valid result replaces
+the in-memory snapshot and LKG; failure retains the current last-good or empty state.
 
 See `docs/sovereignty.md` for the accepted data, cache, lifecycle, and presentation behavior.
 

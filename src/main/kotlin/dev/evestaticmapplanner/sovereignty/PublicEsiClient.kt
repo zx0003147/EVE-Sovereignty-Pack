@@ -16,10 +16,12 @@ internal sealed interface PublicEsiPayloadResult {
 }
 
 /** Public ESI operations required by sovereignty loading, without exposing HTTP to the source. */
-internal interface PublicEsiClient {
+internal interface PublicEsiClient : AutoCloseable {
     fun fetchSovereigntySystems(): PublicEsiPayloadResult
 
     fun resolveNames(ids: List<Int>): PublicEsiPayloadResult
+
+    override fun close() = Unit
 }
 
 internal data class EsiHttpResponse(
@@ -30,8 +32,17 @@ internal data class EsiHttpResponse(
 /** JDK-only HTTP implementation for public, unauthenticated ESI routes. */
 internal class JdkPublicEsiClient(
     private val baseUri: URI = URI.create("https://esi.evetech.net/"),
-    private val sendRequest: (HttpRequest) -> EsiHttpResponse = defaultHttpSender(),
+    sendRequest: ((HttpRequest) -> EsiHttpResponse)? = null,
 ) : PublicEsiClient {
+    private val httpClient = if (sendRequest == null) defaultHttpClient() else null
+    private val sendRequest = sendRequest ?: { request: HttpRequest ->
+        val response = checkNotNull(httpClient).send(
+            request,
+            HttpResponse.BodyHandlers.ofString(Charsets.UTF_8),
+        )
+        EsiHttpResponse(response.statusCode(), response.body())
+    }
+
     override fun fetchSovereigntySystems(): PublicEsiPayloadResult = execute(
         operation = "Public ESI sovereignty systems",
         request = requestBuilder("sovereignty/systems?datasource=tranquility")
@@ -82,24 +93,19 @@ internal class JdkPublicEsiClient(
         )
     }
 
+    override fun close() {
+        httpClient?.shutdownNow()
+    }
+
     private companion object {
         const val COMPATIBILITY_DATE = "2026-05-19"
         val CONNECT_TIMEOUT: Duration = Duration.ofSeconds(10)
         val REQUEST_TIMEOUT: Duration = Duration.ofSeconds(30)
 
-        fun defaultHttpSender(): (HttpRequest) -> EsiHttpResponse {
-            val httpClient = HttpClient.newBuilder()
-                .connectTimeout(CONNECT_TIMEOUT)
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build()
-            return { request ->
-                val response = httpClient.send(
-                    request,
-                    HttpResponse.BodyHandlers.ofString(Charsets.UTF_8),
-                )
-                EsiHttpResponse(response.statusCode(), response.body())
-            }
-        }
+        fun defaultHttpClient(): HttpClient = HttpClient.newBuilder()
+            .connectTimeout(CONNECT_TIMEOUT)
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build()
     }
 }
 

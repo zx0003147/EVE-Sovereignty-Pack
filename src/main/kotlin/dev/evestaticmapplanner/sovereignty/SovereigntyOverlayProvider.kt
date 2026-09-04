@@ -7,18 +7,8 @@ import dev.evestaticmapplanner.feature.api.OverlayProviderDescriptor
 import dev.evestaticmapplanner.feature.api.OverlaySnapshot
 
 internal class SovereigntyOverlayProvider(
-    repository: SovereigntyRepository,
+    private val repository: SovereigntyRepository,
 ) : OverlayProvider {
-    private val snapshot = OverlaySnapshot(repository.records().map { record ->
-        OverlayEntry(
-            layerId = LAYER_ID,
-            systemId = record.systemId,
-            title = record.allianceName,
-            subtitle = record.sovereigntyStatus,
-            value = SovereigntyVisualIdentity.presentationMetadata(record),
-        )
-    })
-
     override fun descriptor() = OverlayProviderDescriptor(
         id = "sovereignty.pack.overlay",
         name = "Sovereignty",
@@ -34,7 +24,15 @@ internal class SovereigntyOverlayProvider(
         ),
     )
 
-    override fun snapshot(): OverlaySnapshot = snapshot
+    override fun snapshot(): OverlaySnapshot = OverlaySnapshot(repository.records().map { record ->
+        OverlayEntry(
+            layerId = LAYER_ID,
+            systemId = record.systemId,
+            title = record.allianceName,
+            subtitle = record.sovereigntyStatus,
+            value = SovereigntyVisualIdentity.presentationMetadata(record),
+        )
+    })
 
     private companion object {
         const val LAYER_ID = "sovereignty"

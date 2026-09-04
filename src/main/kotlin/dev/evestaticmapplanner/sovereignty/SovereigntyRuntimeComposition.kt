@@ -11,6 +11,13 @@ internal enum class SovereigntyDataSourceMode {
     PUBLIC_ESI,
 }
 
+internal data class SovereigntyRuntimeActivation(
+    val initialSnapshot: SovereigntySnapshot,
+    val initialCacheState: SovereigntyInitialCacheState?,
+    val refreshRequired: Boolean,
+    val refreshSource: CachedRemoteSovereigntySource?,
+)
+
 /** The single composition point that maps a source mode to the repository's provider boundary. */
 internal class SovereigntyRuntimeComposition(
     val dataSourceMode: SovereigntyDataSourceMode,
@@ -27,19 +34,48 @@ internal class SovereigntyRuntimeComposition(
     ): SovereigntySnapshotProvider = when (dataSourceMode) {
         SovereigntyDataSourceMode.EMBEDDED -> embeddedProviderFactory()
         SovereigntyDataSourceMode.PUBLIC_ESI -> RemoteSovereigntySnapshotProvider(
-            CachedRemoteSovereigntySource(
-                remote = PublicEsiSovereigntySource(publicEsiClientFactory()),
-                cache = cacheFactory(storage),
-                logger = logger,
-                clock = clock,
-            ),
+            createPublicEsiSource(storage, logger),
         )
+    }
+
+    fun createActivation(
+        storage: PackStorage,
+        logger: FeaturePackLogger,
+    ): SovereigntyRuntimeActivation = when (dataSourceMode) {
+        SovereigntyDataSourceMode.EMBEDDED -> SovereigntyRuntimeActivation(
+            initialSnapshot = embeddedProviderFactory().loadSnapshot(),
+            initialCacheState = null,
+            refreshRequired = false,
+            refreshSource = null,
+        )
+        SovereigntyDataSourceMode.PUBLIC_ESI -> {
+            val source = createPublicEsiSource(storage, logger)
+            val initial = source.loadInitialSnapshot()
+            SovereigntyRuntimeActivation(
+                initialSnapshot = initial.snapshot,
+                initialCacheState = initial.cacheState,
+                refreshRequired = initial.refreshRequired,
+                refreshSource = source,
+            )
+        }
     }
 
     fun createRepository(
         storage: PackStorage,
         logger: FeaturePackLogger,
     ): SovereigntyRepository = SovereigntyRepository(createSnapshotProvider(storage, logger))
+
+    private fun createPublicEsiSource(
+        storage: PackStorage,
+        logger: FeaturePackLogger,
+    ) = CachedRemoteSovereigntySource(
+        remote = DeferredRemoteSovereigntySource {
+            PublicEsiSovereigntySource(publicEsiClientFactory())
+        },
+        cache = cacheFactory(storage),
+        logger = logger,
+        clock = clock,
+    )
 
     companion object {
         val PUBLIC_ESI_LKG_CACHE_PATH = PackRelativePath("public-esi-lkg.json")

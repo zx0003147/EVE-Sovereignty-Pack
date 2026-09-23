@@ -56,7 +56,17 @@ class SovereigntyFeaturePack internal constructor(
         var overlayRegistration: OverlayRegistration? = null
         var systemInfoRegistration: SystemInfoRegistration? = null
         var refreshCoordinator: SovereigntyRefreshCoordinator? = null
+        var allianceDirectoryRegistration: SovereigntyAllianceDirectoryRegistration =
+            NoSovereigntyAllianceDirectoryRegistration
         try {
+            allianceDirectoryRegistration = SovereigntyAllianceDirectoryBridge.register(
+                context,
+                repository,
+                activation.allianceMetadataState,
+            )
+            val metadataRefreshRequired = allianceDirectoryRegistration.active &&
+                activation.allianceMetadataSource?.requiresRefresh(repository.observedAllianceNames()) == true
+            val backgroundRefreshRequired = activation.refreshRequired || metadataRefreshRequired
             val overlayProvider = SovereigntyOverlayProvider(repository)
             val dynamicOverlay = activation.refreshSource?.let {
                 context.capabilities().find(StandardFeatureCapabilities.DYNAMIC_OVERLAY)
@@ -66,12 +76,16 @@ class SovereigntyFeaturePack internal constructor(
                     repository = repository,
                     source = activation.refreshSource,
                     logger = context.logger(),
+                    refreshSovereignty = activation.refreshRequired,
+                    allianceMetadataSource = activation.allianceMetadataSource
+                        ?.takeIf { allianceDirectoryRegistration.active },
+                    allianceDirectoryRegistration = allianceDirectoryRegistration,
                 )
                 dynamicOverlay.register(
                     RefreshingSovereigntyOverlayProvider(overlayProvider, refreshCoordinator::refreshOnce),
                 )
             } else {
-                if (activation.refreshRequired) {
+                if (backgroundRefreshRequired) {
                     context.logger().log(
                         FeaturePackLogLevel.WARN,
                         "Host does not expose Dynamic Overlay capability; PUBLIC_ESI background refresh is unavailable",
@@ -89,12 +103,14 @@ class SovereigntyFeaturePack internal constructor(
                 overlayRegistration = overlayRegistration,
                 systemInfoRegistration = systemInfoRegistration,
                 refreshCoordinator = refreshCoordinator,
+                allianceDirectoryRegistration = allianceDirectoryRegistration,
                 logger = context.logger(),
             )
-            if (activation.refreshRequired) dynamicRegistration?.requestRefresh()
+            if (backgroundRefreshRequired) dynamicRegistration?.requestRefresh()
             return session
         } catch (error: Throwable) {
             runCatching { refreshCoordinator?.close() }
+            runCatching { allianceDirectoryRegistration.close() }
             runCatching { systemInfoRegistration?.close() }
             runCatching { overlayRegistration?.close() }
             if (refreshCoordinator == null) runCatching { activation.refreshSource?.close() }
@@ -106,6 +122,7 @@ class SovereigntyFeaturePack internal constructor(
         private val overlayRegistration: OverlayRegistration,
         private val systemInfoRegistration: SystemInfoRegistration,
         private val refreshCoordinator: SovereigntyRefreshCoordinator?,
+        private val allianceDirectoryRegistration: SovereigntyAllianceDirectoryRegistration,
         private val logger: FeaturePackLogger,
     ) : FeaturePackSession {
         private val closed = AtomicBoolean(false)
@@ -117,6 +134,11 @@ class SovereigntyFeaturePack internal constructor(
                 refreshCoordinator?.close()
             } catch (error: Throwable) {
                 failure = error
+            }
+            try {
+                allianceDirectoryRegistration.close()
+            } catch (error: Throwable) {
+                if (failure == null) failure = error else failure.addSuppressed(error)
             }
             try {
                 systemInfoRegistration.close()
@@ -156,6 +178,9 @@ private class SovereigntyRefreshCoordinator(
     private val repository: SovereigntyRepository,
     private val source: CachedRemoteSovereigntySource,
     private val logger: FeaturePackLogger,
+    private val refreshSovereignty: Boolean,
+    private val allianceMetadataSource: PublicEsiAllianceMetadataSource?,
+    private val allianceDirectoryRegistration: SovereigntyAllianceDirectoryRegistration,
 ) : AutoCloseable {
     private val lock = Any()
     private var state = RefreshState.NOT_STARTED
@@ -178,40 +203,82 @@ private class SovereigntyRefreshCoordinator(
         if (!shouldRun) return
 
         val startedAt = System.nanoTime()
-        logger.log(FeaturePackLogLevel.INFO, "PUBLIC_ESI sovereignty background refresh started", null)
-        val result = try {
-            source.fetchFreshSnapshot()
-        } catch (error: Throwable) {
-            rethrowFatal(error)
-            RemoteSnapshotResult.Unavailable(
-                error.message?.let { "Unexpected refresh failure: $it" } ?: "Unexpected refresh failure",
-            )
+        logger.log(FeaturePackLogLevel.INFO, "PUBLIC_ESI background refresh started", null)
+        if (refreshSovereignty) {
+            val result = try {
+                source.fetchFreshSnapshot()
+            } catch (error: Throwable) {
+                rethrowFatal(error)
+                RemoteSnapshotResult.Unavailable(
+                    error.message?.let { "Unexpected refresh failure: $it" } ?: "Unexpected refresh failure",
+                )
+            }
+
+            synchronized(lock) {
+                if (state == RefreshState.CLOSED) return
+                when (result) {
+                    is RemoteSnapshotResult.Success -> {
+                        source.saveFreshSnapshot(result.snapshot)
+                        repository.replace(result.snapshot)
+                        systemInfoRefresh()
+                        allianceDirectoryRegistration.requestRefresh()
+                        logger.log(
+                            FeaturePackLogLevel.INFO,
+                            "PUBLIC_ESI sovereignty background refresh published fresh data in " +
+                                "${elapsedMillis(startedAt)} ms",
+                            null,
+                        )
+                    }
+                    is RemoteSnapshotResult.Unavailable -> logger.log(
+                        FeaturePackLogLevel.WARN,
+                        "PUBLIC_ESI sovereignty background refresh unavailable; retaining current state: ${result.reason}",
+                        null,
+                    )
+                    is RemoteSnapshotResult.Invalid -> logger.log(
+                        FeaturePackLogLevel.WARN,
+                        "PUBLIC_ESI sovereignty background refresh invalid; retaining current state: ${result.reason}",
+                        null,
+                    )
+                }
+            }
+        }
+
+        val metadataPlan = allianceMetadataSource?.let { metadataSource ->
+            try {
+                metadataSource.fetch(repository.observedAllianceNames())
+            } catch (error: Throwable) {
+                rethrowFatal(error)
+                AllianceMetadataRefreshPlan(
+                    requestedCount = 0,
+                    replacements = emptyList(),
+                    failures = listOf(
+                        error.message?.let { "Unexpected Alliance metadata refresh failure: $it" }
+                            ?: "Unexpected Alliance metadata refresh failure",
+                    ),
+                )
+            }
         }
 
         synchronized(lock) {
             if (state == RefreshState.CLOSED) return
-            when (result) {
-                is RemoteSnapshotResult.Success -> {
-                    source.saveFreshSnapshot(result.snapshot)
-                    repository.replace(result.snapshot)
-                    systemInfoRefresh()
+            val metadataResult = metadataPlan?.let { allianceMetadataSource.apply(it) }
+            if (metadataResult != null) {
+                if (metadataResult.changed) allianceDirectoryRegistration.requestRefresh()
+                if (metadataResult.failures.isNotEmpty()) {
+                    logger.log(
+                        FeaturePackLogLevel.WARN,
+                        "PUBLIC_ESI Alliance metadata refresh completed with " +
+                            "${metadataResult.failures.size} failure(s); retaining last-good metadata: " +
+                            metadataResult.failures.joinToString(limit = 3),
+                        null,
+                    )
+                } else if (metadataResult.requestedCount > 0) {
                     logger.log(
                         FeaturePackLogLevel.INFO,
-                        "PUBLIC_ESI sovereignty background refresh published fresh data in " +
-                            "${elapsedMillis(startedAt)} ms",
+                        "PUBLIC_ESI Alliance metadata refreshed ${metadataResult.updatedCount} observed Alliance(s)",
                         null,
                     )
                 }
-                is RemoteSnapshotResult.Unavailable -> logger.log(
-                    FeaturePackLogLevel.WARN,
-                    "PUBLIC_ESI sovereignty background refresh unavailable; retaining current state: ${result.reason}",
-                    null,
-                )
-                is RemoteSnapshotResult.Invalid -> logger.log(
-                    FeaturePackLogLevel.WARN,
-                    "PUBLIC_ESI sovereignty background refresh invalid; retaining current state: ${result.reason}",
-                    null,
-                )
             }
             state = RefreshState.COMPLETED
         }

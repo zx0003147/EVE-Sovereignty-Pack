@@ -1,7 +1,13 @@
 package dev.evestaticmapplanner.sovereignty
 
 import dev.evestaticmapplanner.feature.api.CoreVersion
+import dev.evestaticmapplanner.feature.api.AllianceDirectoryCapability
+import dev.evestaticmapplanner.feature.api.AllianceDirectoryProvider
+import dev.evestaticmapplanner.feature.api.AllianceDirectoryRegistration
 import dev.evestaticmapplanner.feature.api.FeatureApiVersions
+import dev.evestaticmapplanner.feature.api.FeatureCapability
+import dev.evestaticmapplanner.feature.api.FeatureCapabilityKey
+import dev.evestaticmapplanner.feature.api.FeatureCapabilityLookup
 import dev.evestaticmapplanner.feature.api.FeaturePackContext
 import dev.evestaticmapplanner.feature.api.FeaturePackEntrypoint
 import dev.evestaticmapplanner.feature.api.FeaturePackHostInfo
@@ -16,6 +22,7 @@ import dev.evestaticmapplanner.feature.api.PackStorage
 import dev.evestaticmapplanner.feature.api.SystemInfoProvider
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistration
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistry
+import dev.evestaticmapplanner.feature.api.StandardFeatureCapabilities
 import java.nio.file.Path
 import java.util.ServiceLoader
 import java.util.jar.JarFile
@@ -112,6 +119,22 @@ class SovereigntyFeaturePackTest {
         session.close()
     }
 
+    @Test
+    fun `Feature API 2_4 Host receives and closes Alliance Directory provider`() {
+        val directory = RecordingAllianceDirectoryCapability()
+        val context = RecordingContext(directory)
+
+        val session = embeddedFeaturePack().start(context)
+
+        assertTrue(directory.active)
+        val alliances = checkNotNull(directory.provider).snapshot().alliances
+        assertEquals(setOf(1_354_830_081L, 99_003_581L), alliances.map { it.allianceId }.toSet())
+        assertEquals("Goonswarm Federation", alliances.single { it.allianceId == 1_354_830_081L }.name)
+
+        session.close()
+        assertFalse(directory.active)
+    }
+
     private fun embeddedFeaturePack() = SovereigntyFeaturePack(
         SovereigntyRuntimeComposition(SovereigntyDataSourceMode.EMBEDDED),
     )
@@ -136,7 +159,9 @@ class SovereigntyFeaturePackTest {
         }
     }
 
-    private class RecordingContext : FeaturePackContext {
+    private class RecordingContext(
+        private val allianceDirectory: RecordingAllianceDirectoryCapability? = null,
+    ) : FeaturePackContext {
         val overlayRegistry = RecordingOverlayRegistry()
         val systemInfoRegistry = RecordingSystemInfoRegistry()
         val events = mutableListOf<String>()
@@ -162,6 +187,35 @@ class SovereigntyFeaturePackTest {
         override fun overlays(): OverlayRegistry = overlayRegistry
 
         override fun systemInfo(): SystemInfoRegistry = systemInfoRegistry
+
+        override fun capabilities(): FeatureCapabilityLookup = object : FeatureCapabilityLookup {
+            override fun <T : FeatureCapability> find(key: FeatureCapabilityKey<T>): T? =
+                if (key == StandardFeatureCapabilities.ALLIANCE_DIRECTORY && allianceDirectory != null) {
+                    key.type.cast(allianceDirectory)
+                } else {
+                    null
+                }
+        }
+    }
+
+    private class RecordingAllianceDirectoryCapability : AllianceDirectoryCapability {
+        var provider: AllianceDirectoryProvider? = null
+        var active = false
+        var refreshes = 0
+
+        override fun register(provider: AllianceDirectoryProvider): AllianceDirectoryRegistration {
+            this.provider = provider
+            active = true
+            return object : AllianceDirectoryRegistration {
+                override fun requestRefresh() {
+                    if (active) refreshes += 1
+                }
+
+                override fun close() {
+                    active = false
+                }
+            }
+        }
     }
 
     private class RecordingOverlayRegistry : OverlayRegistry {

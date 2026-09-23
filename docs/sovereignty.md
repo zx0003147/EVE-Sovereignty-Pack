@@ -91,6 +91,22 @@ The Pack owns provider/layer identifiers and Sovereignty metadata. Core owns agg
 geometry construction, emblem image loading, legend rendering, drawing order, and failure isolation. There is no
 Sovereignty production implementation or domain model inside Core.
 
+## Alliance Directory provider
+
+On a Host that exposes Feature API 2.4's optional Alliance Directory capability, the Pack publishes only the distinct
+positive alliance IDs observed in its current Sovereignty snapshot. The directory is available immediately from the
+local Sovereignty LKG. Alliance names come from that snapshot until public alliance metadata has been validated; ESI
+`GET /alliances/{alliance_id}` then enriches the same stable ID with the authoritative display name and ticker.
+
+Alliance metadata uses a separate `alliance-metadata-lkg.json` cache with its own HTTP validators and freshness. A
+metadata request failure retains its last-good record and never blocks or replaces Sovereignty Overlay/System Info
+data. The Pack does not enumerate all EVE alliances and does not request details for IDs absent from its current
+Sovereignty snapshot. Removing an ID from the snapshot removes it from the published directory without rewriting the
+historical metadata cache.
+
+Hosts without the optional capability, including Feature API 2.0 and 2.3 runtimes, skip this registration through the
+isolated compatibility bridge. Their existing Overlay and System Info contributions continue to work.
+
 ## Alliance visual identity and territory metadata
 
 For v2/PUBLIC_ESI data, alliance identity is keyed by `allianceId`, so rename events do not change grouping or emblem
@@ -128,7 +144,7 @@ storage and UI remain Host-owned, while the Pack supplies the metadata that make
 ## Storage and dependency boundary
 
 The Pack uses only paths mediated by its Feature API `PackStorage` and never reaches into Core databases or services.
-Its committed build declares `dev.evestaticmapplanner:feature-api:2.0.0` as `compileOnly` and test input. It has no
+Its committed build declares `dev.evestaticmapplanner:feature-api:2.4.0` as `compileOnly` and test input. It has no
 Gradle project dependency on Feature API, permanent composite include, sibling path, or Core source dependency.
 Optional developer composite substitution remains command-line-only.
 
@@ -137,4 +153,5 @@ Optional developer composite substitution remains command-line-only.
 Tests use injected HTTP senders, fake clocks, temporary Pack storage, embedded fixtures, and deterministic local
 snapshots. They cover PUBLIC_ESI validation, LKG v1/v2 compatibility, freshness boundaries, offline fallback,
 background replacement, duplicate invalidation, cancellation/disable races, cache atomicity, repository/provider
-behavior, identity metadata, and canonical standalone JAR packaging without live Internet.
+behavior, identity metadata, Alliance Directory projection and metadata enrichment, old-Host compatibility, and
+canonical standalone JAR packaging without live Internet.

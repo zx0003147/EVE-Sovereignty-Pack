@@ -1,6 +1,10 @@
 package dev.evestaticmapplanner.sovereignty
 
 import dev.evestaticmapplanner.feature.api.CoreVersion
+import dev.evestaticmapplanner.feature.api.AllianceDirectoryCapability
+import dev.evestaticmapplanner.feature.api.AllianceDirectoryProvider
+import dev.evestaticmapplanner.feature.api.AllianceDirectoryProviderSnapshot
+import dev.evestaticmapplanner.feature.api.AllianceDirectoryRegistration
 import dev.evestaticmapplanner.feature.api.DynamicOverlayCapability
 import dev.evestaticmapplanner.feature.api.DynamicOverlayRegistration
 import dev.evestaticmapplanner.feature.api.FeatureApiVersions
@@ -204,9 +208,72 @@ class SovereigntyRefreshLifecycleTest {
         assertTrue(runtime.temporaryCacheFiles().isEmpty())
     }
 
-    private class TestRuntime(private val root: Path) {
-        val context = RecordingContext(root)
+    @Test
+    fun `fresh sovereignty publishes directory immediately then enriches metadata in background`() =
+        withDirectoryRuntime { runtime ->
+            runtime.saveCache(cachedSnapshot("Cached Alliance"), NOW.minus(Duration.ofMinutes(30)))
+            val client = ControlledPublicEsiClient(RemoteMode.SUCCESS)
+
+            val session = runtime.start(client)
+
+            assertEquals("Cached Alliance", runtime.context.allianceDirectory.current().alliances.single().name)
+            assertEquals(null, runtime.context.allianceDirectory.current().alliances.single().ticker)
+            assertTrue(client.started.await(1, TimeUnit.SECONDS))
+            assertEquals(0, client.sovereigntyRequests.get())
+            client.release.countDown()
+            runtime.context.dynamicOverlay.awaitRefresh()
+
+            val enriched = runtime.context.allianceDirectory.current().alliances.single()
+            assertEquals(99_000_001L, enriched.allianceId)
+            assertEquals("Remote Alliance", enriched.name)
+            assertEquals("REMOTE", enriched.ticker)
+            assertEquals(1, client.metadataRequests.get())
+            assertEquals(1, runtime.context.allianceDirectory.refreshes.get())
+            session.close()
+            assertFalse(runtime.context.allianceDirectory.active.get())
+        }
+
+    @Test
+    fun `metadata failure retains immediate directory and existing sovereignty providers`() =
+        withDirectoryRuntime { runtime ->
+            runtime.saveCache(cachedSnapshot("Cached Alliance"), NOW.minus(Duration.ofMinutes(30)))
+            val client = ControlledPublicEsiClient(RemoteMode.FAILURE)
+            val session = runtime.start(client)
+            assertTrue(client.started.await(1, TimeUnit.SECONDS))
+            client.release.countDown()
+            runtime.context.dynamicOverlay.awaitRefresh()
+
+            assertEquals("Cached Alliance", runtime.context.dynamicOverlay.currentAlliance())
+            assertEquals("Cached Alliance", runtime.context.systemInfo.currentAlliance())
+            val directory = runtime.context.allianceDirectory.current().alliances.single()
+            assertEquals("Cached Alliance", directory.name)
+            assertEquals(null, directory.ticker)
+            assertTrue(runtime.context.events.any { it.contains("retaining last-good metadata") })
+            session.close()
+        }
+
+    @Test
+    fun `metadata response completing after shutdown cannot write cache`() =
+        withDirectoryRuntime { runtime ->
+            runtime.saveCache(cachedSnapshot("Cached Alliance"), NOW.minus(Duration.ofMinutes(30)))
+            val client = ControlledPublicEsiClient(RemoteMode.SUCCESS, succeedAfterClose = true)
+            val session = runtime.start(client)
+            assertTrue(client.started.await(1, TimeUnit.SECONDS))
+
+            session.close()
+            runtime.context.dynamicOverlay.awaitRefresh()
+
+            assertTrue(client.closed.get())
+            assertFalse(Files.exists(runtime.metadataCachePath))
+            assertFalse(runtime.context.allianceDirectory.active.get())
+        }
+
+    private class TestRuntime(private val root: Path, directoryEnabled: Boolean = false) {
+        val context = RecordingContext(root, directoryEnabled)
         val cachePath: Path = context.storage.cachePath(SovereigntyRuntimeComposition.PUBLIC_ESI_LKG_CACHE_PATH)
+        val metadataCachePath: Path = context.storage.cachePath(
+            SovereigntyRuntimeComposition.ALLIANCE_METADATA_LKG_CACHE_PATH,
+        )
 
         fun start(client: ControlledPublicEsiClient) = SovereigntyFeaturePack(
             SovereigntyRuntimeComposition(
@@ -233,10 +300,11 @@ class SovereigntyRefreshLifecycleTest {
         }
     }
 
-    private class RecordingContext(root: Path) : FeaturePackContext {
+    private class RecordingContext(root: Path, private val directoryEnabled: Boolean) : FeaturePackContext {
         val storage = TestStorage(root)
         val dynamicOverlay = RecordingDynamicOverlayCapability()
         val systemInfo = RecordingSystemInfoRegistry()
+        val allianceDirectory = RecordingAllianceDirectoryCapability()
         val events = CopyOnWriteArrayList<String>()
 
         override fun hostInfo() = FeaturePackHostInfo(
@@ -261,8 +329,40 @@ class SovereigntyRefreshLifecycleTest {
 
         override fun capabilities(): FeatureCapabilityLookup = object : FeatureCapabilityLookup {
             override fun <T : FeatureCapability> find(key: FeatureCapabilityKey<T>): T? =
-                if (key == StandardFeatureCapabilities.DYNAMIC_OVERLAY) key.type.cast(dynamicOverlay) else null
+                when {
+                    key == StandardFeatureCapabilities.DYNAMIC_OVERLAY -> key.type.cast(dynamicOverlay)
+                    directoryEnabled && key == StandardFeatureCapabilities.ALLIANCE_DIRECTORY ->
+                        key.type.cast(allianceDirectory)
+                    else -> null
+                }
         }
+    }
+
+    private class RecordingAllianceDirectoryCapability : AllianceDirectoryCapability {
+        private val provider = AtomicReference<AllianceDirectoryProvider>()
+        private val latest = AtomicReference(AllianceDirectoryProviderSnapshot(emptyList()))
+        val active = AtomicBoolean(false)
+        val refreshes = AtomicInteger()
+
+        override fun register(provider: AllianceDirectoryProvider): AllianceDirectoryRegistration {
+            this.provider.set(provider)
+            latest.set(provider.snapshot())
+            active.set(true)
+            return object : AllianceDirectoryRegistration {
+                override fun requestRefresh() {
+                    if (active.get()) {
+                        refreshes.incrementAndGet()
+                        latest.set(provider.snapshot())
+                    }
+                }
+
+                override fun close() {
+                    active.set(false)
+                }
+            }
+        }
+
+        fun current(): AllianceDirectoryProviderSnapshot = latest.get()
     }
 
     private class RecordingDynamicOverlayCapability : DynamicOverlayCapability {
@@ -348,12 +448,14 @@ class SovereigntyRefreshLifecycleTest {
 
     private class ControlledPublicEsiClient(
         private val mode: RemoteMode,
+        private val succeedAfterClose: Boolean = false,
     ) : PublicEsiClient {
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
         val closed = AtomicBoolean(false)
         val sovereigntyRequests = AtomicInteger()
         val namesRequests = AtomicInteger()
+        val metadataRequests = AtomicInteger()
 
         override fun fetchSovereigntySystems(): PublicEsiPayloadResult {
             sovereigntyRequests.incrementAndGet()
@@ -376,6 +478,27 @@ class SovereigntyRefreshLifecycleTest {
             return PublicEsiPayloadResult.Success(NAME_PAYLOAD)
         }
 
+        override fun fetchAllianceMetadata(
+            allianceId: Int,
+            validators: AllianceMetadataValidators,
+        ): PublicEsiAllianceMetadataResult {
+            metadataRequests.incrementAndGet()
+            started.countDown()
+            try {
+                release.await()
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return PublicEsiAllianceMetadataResult.Unavailable("interrupted")
+            }
+            if ((!succeedAfterClose && closed.get()) || mode == RemoteMode.FAILURE) {
+                return PublicEsiAllianceMetadataResult.Unavailable("offline")
+            }
+            return PublicEsiAllianceMetadataResult.Updated(
+                """{"name":"Remote Alliance","ticker":"REMOTE"}""",
+                EsiCacheHeaders("max-age=3600", "\"remote\"", "Wed, 23 Sep 2026 10:00:00 GMT"),
+            )
+        }
+
         override fun close() {
             closed.set(true)
             release.countDown()
@@ -394,6 +517,15 @@ class SovereigntyRefreshLifecycleTest {
         val root = createTempDirectory("sovereignty-refresh-lifecycle-")
         try {
             block(TestRuntime(root))
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    private inline fun withDirectoryRuntime(block: (TestRuntime) -> Unit) {
+        val root = createTempDirectory("sovereignty-directory-lifecycle-")
+        try {
+            block(TestRuntime(root, directoryEnabled = true))
         } finally {
             root.toFile().deleteRecursively()
         }

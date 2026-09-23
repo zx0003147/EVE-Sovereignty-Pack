@@ -12,8 +12,8 @@ Core does not bundle this Pack. This repository builds the canonical standalone 
 
 - JDK 25
 - Feature API runtime contract: `2` (frozen)
-- Build artifact dependency: `dev.evestaticmapplanner:feature-api:2.0.0`
-- Pack version: `0.2.1`
+- Build artifact dependency: `dev.evestaticmapplanner:feature-api:2.4.0`
+- Pack version: `0.3.0`
 - A Maven repository containing the Feature API artifact
 - A corresponding EVE Static Map Planner release that hosts Feature API runtime contract `2`
 
@@ -25,18 +25,21 @@ The Pack consumes Feature API as a Maven coordinate. It has no Core source or Gr
 - Validated Last Known Good (LKG) fallback for offline or unavailable startup.
 - A low-priority territory Overlay contribution and Sovereignty section in System Info.
 - Stable alliance visual identity based on `allianceId`.
+- Alliance Directory publication for Alliance IDs observed in the current Sovereignty snapshot.
+- Background public-ESI Alliance detail enrichment with independent last-good name/ticker and HTTP validator caching.
 - Alliance color, territory, and emblem presentation metadata for Core's generic renderer.
 - Sovereignty Preferences integration through Host behavior when the installed provider is available.
 
-The Pack publishes a fresh or stale valid LKG during startup without waiting for the network. When the cache is stale,
-missing, or unusable, it requests one lifecycle-owned background refresh through Feature API 2. A valid result replaces
-the in-memory snapshot and LKG; failure retains the current last-good or empty state.
+The Pack publishes a fresh or stale valid Sovereignty LKG and any cached Alliance metadata during startup without
+waiting for the network. When either cache needs refresh, it requests lifecycle-owned background work through Feature
+API 2. Sovereignty and Alliance metadata use independent caches, so detail or ticker failures never invalidate the
+territory Overlay, System Info, or Sovereignty LKG.
 
 See `docs/sovereignty.md` for the accepted data, cache, lifecycle, and presentation behavior.
 
 ## Build
 
-For local development, pass a Maven repository containing Feature API `2.0.0`. The value is an artifact repository,
+For local development, pass a Maven repository containing Feature API `2.4.0`. The value is an artifact repository,
 not a Core checkout or project dependency.
 
 ```powershell
@@ -88,14 +91,14 @@ worktrees without remote publication.
 
 Production code depends only on Feature API plus JDK APIs; it does not depend on Core source, Core projects, Compose,
 SQLite, or MCP. Feature API is `compileOnly`, so the Host supplies the single runtime contract identity. The Pack owns
-its PUBLIC_ESI composition, canonical snapshot, LKG policy, Overlay/System Info providers, and presentation metadata.
-Core owns lifecycle hosting, compatibility, storage path mediation, aggregation, rendering, Pack management, and
-Preferences UI behavior.
+its PUBLIC_ESI composition, canonical snapshot, independent Sovereignty and Alliance metadata LKG policies,
+Overlay/System Info/Alliance Directory providers, and presentation metadata. Core owns lifecycle hosting,
+compatibility, storage path mediation, aggregation, rendering, Pack management, and Preferences UI behavior.
 
 ## CI foundation
 
 `.github/workflows/sovereignty-ci.yml` contains the final standalone coordinate-consumption build shape, but is
-manual-only until Feature API `2.0.0` is published to an authorized production Maven repository. Before dispatch, the
+manual-only until Feature API `2.4.0` is published to an authorized production Maven repository. Before dispatch, the
 repository variable `FEATURE_API_MAVEN_REPOSITORY_URL` must identify that repository and package read permissions must
 be configured. The workflow deliberately fails its prerequisite check when the variable is absent; it never checks
 out Core source and does not use a permanent composite build.

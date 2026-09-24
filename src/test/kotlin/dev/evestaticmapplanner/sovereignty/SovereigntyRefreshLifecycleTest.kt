@@ -26,6 +26,11 @@ import dev.evestaticmapplanner.feature.api.StandardFeatureCapabilities
 import dev.evestaticmapplanner.feature.api.SystemInfoProvider
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistration
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistry
+import dev.evestaticmapplanner.feature.api.SovereigntyCapability
+import dev.evestaticmapplanner.feature.api.SovereigntyFreshnessDto
+import dev.evestaticmapplanner.feature.api.SovereigntyProvider
+import dev.evestaticmapplanner.feature.api.SovereigntyRegistration
+import dev.evestaticmapplanner.feature.api.SovereigntySnapshotDto
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -59,7 +64,9 @@ class SovereigntyRefreshLifecycleTest {
         assertEquals("Fresh Alliance", runtime.context.dynamicOverlay.currentAlliance())
         assertEquals(0, runtime.context.dynamicOverlay.refreshRequests.get())
         assertEquals(0, client.sovereigntyRequests.get())
+        assertEquals(SovereigntyFreshnessDto.AVAILABLE, runtime.context.sovereignty.current().freshness)
         session.close()
+        assertFalse(runtime.context.sovereignty.active.get())
         assertFalse(client.closed.get(), "unused HTTP client factory must remain lazy")
     }
 
@@ -82,6 +89,9 @@ class SovereigntyRefreshLifecycleTest {
         assertEquals("Remote Alliance", runtime.loadCache().records.single().allianceName)
         assertEquals(1, client.sovereigntyRequests.get())
         assertEquals(1, client.namesRequests.get())
+        assertEquals(SovereigntyFreshnessDto.AVAILABLE, runtime.context.sovereignty.current().freshness)
+        assertEquals("Remote Alliance", runtime.context.sovereignty.current().systems.single().allianceName)
+        assertEquals(1, runtime.context.sovereignty.refreshes.get())
         assertTrue(runtime.context.events.any { it.contains("background refresh published fresh data") })
         session.close()
     }
@@ -119,6 +129,8 @@ class SovereigntyRefreshLifecycleTest {
         assertEquals("Stale Alliance", runtime.context.dynamicOverlay.currentAlliance())
         assertEquals(original, Files.readString(runtime.cachePath))
         assertEquals(savedAt, Files.getLastModifiedTime(runtime.cachePath).toInstant())
+        assertEquals(SovereigntyFreshnessDto.STALE, runtime.context.sovereignty.current().freshness)
+        assertEquals("Stale Alliance", runtime.context.sovereignty.current().systems.single().allianceName)
         assertTrue(runtime.context.events.any { it.contains("retaining current state") })
         session.close()
     }
@@ -150,6 +162,7 @@ class SovereigntyRefreshLifecycleTest {
 
         assertTrue(runtime.context.dynamicOverlay.currentSnapshot().entries.isEmpty())
         assertFalse(Files.exists(runtime.cachePath))
+        assertEquals(SovereigntyFreshnessDto.UNAVAILABLE, runtime.context.sovereignty.current().freshness)
         assertTrue(runtime.context.dynamicOverlay.active.get())
         session.close()
     }
@@ -305,6 +318,7 @@ class SovereigntyRefreshLifecycleTest {
         val dynamicOverlay = RecordingDynamicOverlayCapability()
         val systemInfo = RecordingSystemInfoRegistry()
         val allianceDirectory = RecordingAllianceDirectoryCapability()
+        val sovereignty = RecordingSovereigntyCapability()
         val events = CopyOnWriteArrayList<String>()
 
         override fun hostInfo() = FeaturePackHostInfo(
@@ -333,9 +347,43 @@ class SovereigntyRefreshLifecycleTest {
                     key == StandardFeatureCapabilities.DYNAMIC_OVERLAY -> key.type.cast(dynamicOverlay)
                     directoryEnabled && key == StandardFeatureCapabilities.ALLIANCE_DIRECTORY ->
                         key.type.cast(allianceDirectory)
+                    key == StandardFeatureCapabilities.SOVEREIGNTY -> key.type.cast(sovereignty)
                     else -> null
                 }
         }
+    }
+
+    private class RecordingSovereigntyCapability : SovereigntyCapability {
+        private val provider = AtomicReference<SovereigntyProvider>()
+        private val latest = AtomicReference(
+            SovereigntySnapshotDto(
+                emptyList(),
+                source = "test",
+                freshness = SovereigntyFreshnessDto.UNAVAILABLE,
+            ),
+        )
+        val active = AtomicBoolean(false)
+        val refreshes = AtomicInteger()
+
+        override fun register(provider: SovereigntyProvider): SovereigntyRegistration {
+            this.provider.set(provider)
+            latest.set(provider.snapshot())
+            active.set(true)
+            return object : SovereigntyRegistration {
+                override fun requestRefresh() {
+                    if (active.get()) {
+                        refreshes.incrementAndGet()
+                        latest.set(provider.snapshot())
+                    }
+                }
+
+                override fun close() {
+                    active.set(false)
+                }
+            }
+        }
+
+        fun current(): SovereigntySnapshotDto = latest.get()
     }
 
     private class RecordingAllianceDirectoryCapability : AllianceDirectoryCapability {

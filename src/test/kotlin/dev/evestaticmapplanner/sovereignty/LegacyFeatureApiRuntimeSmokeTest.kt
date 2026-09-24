@@ -51,6 +51,7 @@ class LegacyFeatureApiRuntimeSmokeTest {
                     context.systemInfo.provider?.provide(30_004_759)?.sections?.single()?.fields?.first()?.value,
                 )
                 assertTrue(context.events.any { it.contains("predates Alliance Directory") })
+                assertTrue(context.events.any { it.contains("predates typed Sovereignty") })
                 session.close()
                 assertFalse(context.overlay.active)
                 assertFalse(context.systemInfo.active)
@@ -68,9 +69,11 @@ class LegacyFeatureApiRuntimeSmokeTest {
                 throw ClassNotFoundException("Pack implementation must load from the isolated Pack JAR: $name")
             }
             if (name.startsWith("dev.evestaticmapplanner.feature.api.AllianceDirectory") ||
-                name == "dev.evestaticmapplanner.feature.api.AllianceReferenceSnapshot"
+                name == "dev.evestaticmapplanner.feature.api.AllianceReferenceSnapshot" ||
+                name.startsWith("dev.evestaticmapplanner.feature.api.Sovereignty") ||
+                name == "dev.evestaticmapplanner.feature.api.SystemOwnershipDto"
             ) {
-                throw ClassNotFoundException("Simulated Feature API 2.0-2.3 classpath: $name")
+                throw ClassNotFoundException("Simulated Feature API 2.0-2.4 classpath: $name")
             }
             return delegate.loadClass(name)
         }

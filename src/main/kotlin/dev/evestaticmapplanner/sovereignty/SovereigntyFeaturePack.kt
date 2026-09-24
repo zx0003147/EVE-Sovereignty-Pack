@@ -38,6 +38,7 @@ class SovereigntyFeaturePack internal constructor(
         // Startup performs only local work. PUBLIC_ESI refresh runs through Host's dynamic-overlay worker.
         val activation = runtimeComposition.createActivation(context.storage(), context.logger())
         val repository = SovereigntyRepository(activation.initialSnapshot)
+        val publicationState = SovereigntyPublicationState.initial(activation, dataSourceMode)
         repository.metadata.failureMessage?.let { failureMessage ->
             context.logger().log(
                 FeaturePackLogLevel.WARN,
@@ -58,7 +59,9 @@ class SovereigntyFeaturePack internal constructor(
         var refreshCoordinator: SovereigntyRefreshCoordinator? = null
         var allianceDirectoryRegistration: SovereigntyAllianceDirectoryRegistration =
             NoSovereigntyAllianceDirectoryRegistration
+        var sovereigntyRegistration: SovereigntyProviderRegistration = NoSovereigntyProviderRegistration
         try {
+            sovereigntyRegistration = SovereigntyProviderBridge.register(context, publicationState)
             allianceDirectoryRegistration = SovereigntyAllianceDirectoryBridge.register(
                 context,
                 repository,
@@ -80,6 +83,9 @@ class SovereigntyFeaturePack internal constructor(
                     allianceMetadataSource = activation.allianceMetadataSource
                         ?.takeIf { allianceDirectoryRegistration.active },
                     allianceDirectoryRegistration = allianceDirectoryRegistration,
+                    publicationState = publicationState,
+                    sovereigntyRegistration = sovereigntyRegistration,
+                    clock = activation.clock,
                 )
                 dynamicOverlay.register(
                     RefreshingSovereigntyOverlayProvider(overlayProvider, refreshCoordinator::refreshOnce),
@@ -104,12 +110,14 @@ class SovereigntyFeaturePack internal constructor(
                 systemInfoRegistration = systemInfoRegistration,
                 refreshCoordinator = refreshCoordinator,
                 allianceDirectoryRegistration = allianceDirectoryRegistration,
+                sovereigntyRegistration = sovereigntyRegistration,
                 logger = context.logger(),
             )
             if (backgroundRefreshRequired) dynamicRegistration?.requestRefresh()
             return session
         } catch (error: Throwable) {
             runCatching { refreshCoordinator?.close() }
+            runCatching { sovereigntyRegistration.close() }
             runCatching { allianceDirectoryRegistration.close() }
             runCatching { systemInfoRegistration?.close() }
             runCatching { overlayRegistration?.close() }
@@ -123,6 +131,7 @@ class SovereigntyFeaturePack internal constructor(
         private val systemInfoRegistration: SystemInfoRegistration,
         private val refreshCoordinator: SovereigntyRefreshCoordinator?,
         private val allianceDirectoryRegistration: SovereigntyAllianceDirectoryRegistration,
+        private val sovereigntyRegistration: SovereigntyProviderRegistration,
         private val logger: FeaturePackLogger,
     ) : FeaturePackSession {
         private val closed = AtomicBoolean(false)
@@ -137,6 +146,11 @@ class SovereigntyFeaturePack internal constructor(
             }
             try {
                 allianceDirectoryRegistration.close()
+            } catch (error: Throwable) {
+                if (failure == null) failure = error else failure.addSuppressed(error)
+            }
+            try {
+                sovereigntyRegistration.close()
             } catch (error: Throwable) {
                 if (failure == null) failure = error else failure.addSuppressed(error)
             }
@@ -181,6 +195,9 @@ private class SovereigntyRefreshCoordinator(
     private val refreshSovereignty: Boolean,
     private val allianceMetadataSource: PublicEsiAllianceMetadataSource?,
     private val allianceDirectoryRegistration: SovereigntyAllianceDirectoryRegistration,
+    private val publicationState: SovereigntyPublicationState,
+    private val sovereigntyRegistration: SovereigntyProviderRegistration,
+    private val clock: java.time.Clock,
 ) : AutoCloseable {
     private val lock = Any()
     private var state = RefreshState.NOT_STARTED
@@ -220,8 +237,10 @@ private class SovereigntyRefreshCoordinator(
                     is RemoteSnapshotResult.Success -> {
                         source.saveFreshSnapshot(result.snapshot)
                         repository.replace(result.snapshot)
+                        publicationState.publishAvailable(repository.records(), clock.instant())
                         systemInfoRefresh()
                         allianceDirectoryRegistration.requestRefresh()
+                        sovereigntyRegistration.requestRefresh()
                         logger.log(
                             FeaturePackLogLevel.INFO,
                             "PUBLIC_ESI sovereignty background refresh published fresh data in " +
@@ -229,16 +248,24 @@ private class SovereigntyRefreshCoordinator(
                             null,
                         )
                     }
-                    is RemoteSnapshotResult.Unavailable -> logger.log(
-                        FeaturePackLogLevel.WARN,
-                        "PUBLIC_ESI sovereignty background refresh unavailable; retaining current state: ${result.reason}",
-                        null,
-                    )
-                    is RemoteSnapshotResult.Invalid -> logger.log(
-                        FeaturePackLogLevel.WARN,
-                        "PUBLIC_ESI sovereignty background refresh invalid; retaining current state: ${result.reason}",
-                        null,
-                    )
+                    is RemoteSnapshotResult.Unavailable -> {
+                        publicationState.publishFailure(result.reason)
+                        sovereigntyRegistration.requestRefresh()
+                        logger.log(
+                            FeaturePackLogLevel.WARN,
+                            "PUBLIC_ESI sovereignty background refresh unavailable; retaining current state: ${result.reason}",
+                            null,
+                        )
+                    }
+                    is RemoteSnapshotResult.Invalid -> {
+                        publicationState.publishFailure(result.reason)
+                        sovereigntyRegistration.requestRefresh()
+                        logger.log(
+                            FeaturePackLogLevel.WARN,
+                            "PUBLIC_ESI sovereignty background refresh invalid; retaining current state: ${result.reason}",
+                            null,
+                        )
+                    }
                 }
             }
         }

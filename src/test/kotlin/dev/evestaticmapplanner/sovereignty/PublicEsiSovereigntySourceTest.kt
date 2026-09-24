@@ -25,6 +25,7 @@ class PublicEsiSovereigntySourceTest {
             assertEquals("Remote Corporation", corporationName)
             assertEquals("Claimed", sovereigntyStatus)
             assertEquals(99_003_581, allianceId)
+            assertEquals(98_599_770, corporationId)
         }
     }
 

@@ -87,8 +87,9 @@ private fun replaceFromTemporaryFile(temporaryPath: Path, finalPath: Path) {
 }
 
 internal object SovereigntySnapshotCacheCodec {
-    const val FORMAT_VERSION = 2
+    const val FORMAT_VERSION = 3
     private const val LEGACY_FORMAT_VERSION = 1
+    private const val ALLIANCE_ID_FORMAT_VERSION = 2
     const val SOURCE = "PUBLIC_ESI"
 
     fun encode(snapshot: SovereigntySnapshot): String {
@@ -106,6 +107,8 @@ internal object SovereigntySnapshotCacheCodec {
                 append(", \"allianceName\": ").appendJsonString(record.allianceName)
                 append(", \"corporationName\": ")
                 if (record.corporationName == null) append("null") else appendJsonString(record.corporationName)
+                append(", \"corporationId\": ")
+                if (record.corporationId == null) append("null") else append(record.corporationId)
                 append(", \"sovereigntyStatus\": ").appendJsonString(record.sovereigntyStatus)
                 append('}')
                 if (index != snapshot.records.lastIndex) append(',')
@@ -127,7 +130,12 @@ internal object SovereigntySnapshotCacheCodec {
         }
         val formatVersion = (root["formatVersion"] as? JsonNumber)?.longValueOrNull()
             ?: return unusable("Cache formatVersion must be an integer")
-        if (formatVersion !in setOf(LEGACY_FORMAT_VERSION.toLong(), FORMAT_VERSION.toLong())) {
+        if (formatVersion !in setOf(
+                LEGACY_FORMAT_VERSION.toLong(),
+                ALLIANCE_ID_FORMAT_VERSION.toLong(),
+                FORMAT_VERSION.toLong(),
+            )
+        ) {
             return unusable("Unsupported sovereignty cache formatVersion $formatVersion")
         }
         val source = (root["source"] as? JsonString)?.value
@@ -152,10 +160,13 @@ internal object SovereigntySnapshotCacheCodec {
 
     private fun decodeRecord(value: JsonValue, formatVersion: Int): SovereigntyRecord? {
         val fields = (value as? JsonObject)?.fields ?: return null
-        val expectedFields = if (formatVersion == LEGACY_FORMAT_VERSION) {
-            setOf("systemId", "allianceName", "corporationName", "sovereigntyStatus")
-        } else {
-            setOf("systemId", "allianceId", "allianceName", "corporationName", "sovereigntyStatus")
+        val expectedFields = when (formatVersion) {
+            LEGACY_FORMAT_VERSION -> setOf("systemId", "allianceName", "corporationName", "sovereigntyStatus")
+            ALLIANCE_ID_FORMAT_VERSION ->
+                setOf("systemId", "allianceId", "allianceName", "corporationName", "sovereigntyStatus")
+            else -> setOf(
+                "systemId", "allianceId", "allianceName", "corporationId", "corporationName", "sovereigntyStatus",
+            )
         }
         if (fields.keys != expectedFields) return null
         val systemId = (fields["systemId"] as? JsonNumber)?.longValueOrNull()
@@ -174,8 +185,16 @@ internal object SovereigntySnapshotCacheCodec {
             is JsonString -> corporation.value
             else -> return null
         }
+        val corporationId = if (formatVersion < FORMAT_VERSION) null else when (val corporation = fields["corporationId"]) {
+            JsonNull -> null
+            is JsonNumber -> corporation.longValueOrNull()
+                ?.takeIf { it in 1..Int.MAX_VALUE.toLong() }
+                ?.toInt()
+                ?: return null
+            else -> return null
+        }
         val sovereigntyStatus = (fields["sovereigntyStatus"] as? JsonString)?.value ?: return null
-        return SovereigntyRecord(systemId, allianceName, corporationName, sovereigntyStatus, allianceId)
+        return SovereigntyRecord(systemId, allianceName, corporationName, sovereigntyStatus, allianceId, corporationId)
     }
 
     private fun unusable(reason: String) = SovereigntyCacheLoadResult.Unusable(reason)

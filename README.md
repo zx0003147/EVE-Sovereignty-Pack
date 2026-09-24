@@ -3,8 +3,8 @@
 ## What it is
 
 EVE Sovereignty Pack is the first-party external Sovereignty Feature Pack for EVE Static Map Planner. It contributes
-Sovereignty overlays and structured System Info through Core's Feature API while keeping Sovereignty acquisition,
-snapshot policy, and identity metadata outside the Core repository.
+typed System Ownership snapshots, Sovereignty overlays, and structured System Info through Core's Feature API while
+keeping Sovereignty acquisition, cache, refresh, and identity metadata outside the Core repository.
 
 Core does not bundle this Pack. This repository builds the canonical standalone `pack.jar` installed by the Host.
 
@@ -12,8 +12,8 @@ Core does not bundle this Pack. This repository builds the canonical standalone 
 
 - JDK 25
 - Feature API runtime contract: `2` (frozen)
-- Build artifact dependency: `dev.evestaticmapplanner:feature-api:2.4.0`
-- Pack version: `0.3.0`
+- Build artifact dependency: `dev.evestaticmapplanner:feature-api:2.5.0`
+- Pack version: `0.4.0`
 - A Maven repository containing the Feature API artifact
 - A corresponding EVE Static Map Planner release that hosts Feature API runtime contract `2`
 
@@ -26,6 +26,7 @@ The Pack consumes Feature API as a Maven coordinate. It has no Core source or Gr
 - A low-priority territory Overlay contribution and Sovereignty section in System Info.
 - Stable alliance visual identity based on `allianceId`.
 - Alliance Directory publication for Alliance IDs observed in the current Sovereignty snapshot.
+- Typed, in-memory System Ownership publication for Planner Core, AI, MCP, and future consumers.
 - Background public-ESI Alliance detail enrichment with independent last-good name/ticker and HTTP validator caching.
 - Alliance color, territory, and emblem presentation metadata for Core's generic renderer.
 - Sovereignty Preferences integration through Host behavior when the installed provider is available.
@@ -39,7 +40,7 @@ See `docs/sovereignty.md` for the accepted data, cache, lifecycle, and presentat
 
 ## Build
 
-For local development, pass a Maven repository containing Feature API `2.4.0`. The value is an artifact repository,
+For local development, pass a Maven repository containing Feature API `2.5.0`. The value is an artifact repository,
 not a Core checkout or project dependency.
 
 ```powershell
@@ -92,13 +93,14 @@ worktrees without remote publication.
 Production code depends only on Feature API plus JDK APIs; it does not depend on Core source, Core projects, Compose,
 SQLite, or MCP. Feature API is `compileOnly`, so the Host supplies the single runtime contract identity. The Pack owns
 its PUBLIC_ESI composition, canonical snapshot, independent Sovereignty and Alliance metadata LKG policies,
-Overlay/System Info/Alliance Directory providers, and presentation metadata. Core owns lifecycle hosting,
+typed Sovereignty/Overlay/System Info/Alliance Directory providers, and presentation metadata. Core owns the
+System Ownership domain model, lifecycle hosting,
 compatibility, storage path mediation, aggregation, rendering, Pack management, and Preferences UI behavior.
 
 ## CI foundation
 
 `.github/workflows/sovereignty-ci.yml` contains the final standalone coordinate-consumption build shape, but is
-manual-only until Feature API `2.4.0` is published to an authorized production Maven repository. Before dispatch, the
+manual-only until Feature API `2.5.0` is published to an authorized production Maven repository. Before dispatch, the
 repository variable `FEATURE_API_MAVEN_REPOSITORY_URL` must identify that repository and package read permissions must
 be configured. The workflow deliberately fails its prerequisite check when the variable is absent; it never checks
 out Core source and does not use a permanent composite build.

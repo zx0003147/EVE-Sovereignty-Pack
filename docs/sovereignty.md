@@ -87,9 +87,18 @@ entries project alliance name, ownership status, stable owner identity, color me
 through Feature API's display-neutral contracts. System Info exposes the owner and status for a selected claimed
 system.
 
-The Pack owns provider/layer identifiers and Sovereignty metadata. Core owns aggregation, visibility, territory
-geometry construction, emblem image loading, legend rendering, drawing order, and failure isolation. There is no
-Sovereignty production implementation or domain model inside Core.
+The Pack owns provider/layer identifiers, data acquisition, refresh, cache, and Sovereignty presentation metadata.
+Core owns the typed System Ownership domain model, last-good/freshness state, aggregation, visibility, territory
+geometry construction, emblem image loading, legend rendering, drawing order, and failure isolation.
+
+## Typed Sovereignty provider
+
+On a Host that exposes Feature API 2.5's optional Sovereignty capability, the Pack publishes the current immutable
+in-memory system ownership observation. `snapshot()` performs no HTTP or cache I/O. Stable alliance and corporation
+IDs are carried separately from optional names; legacy name-only records remain `UNKNOWN` rather than inventing an
+ID. Successful refresh publishes `AVAILABLE`; refresh failure retains last-good records as `STALE`; missing data is
+`UNAVAILABLE`. Closing the Pack registration removes the Core publication immediately. A reflective compatibility
+bridge keeps the same Pack linkable on Feature API 2.0-2.4 Hosts, where Overlay and System Info continue to work.
 
 ## Alliance Directory provider
 
@@ -144,14 +153,15 @@ storage and UI remain Host-owned, while the Pack supplies the metadata that make
 ## Storage and dependency boundary
 
 The Pack uses only paths mediated by its Feature API `PackStorage` and never reaches into Core databases or services.
-Its committed build declares `dev.evestaticmapplanner:feature-api:2.4.0` as `compileOnly` and test input. It has no
+Its committed build declares `dev.evestaticmapplanner:feature-api:2.5.0` as `compileOnly` and test input. It has no
 Gradle project dependency on Feature API, permanent composite include, sibling path, or Core source dependency.
 Optional developer composite substitution remains command-line-only.
 
 ## Testing boundary
 
 Tests use injected HTTP senders, fake clocks, temporary Pack storage, embedded fixtures, and deterministic local
-snapshots. They cover PUBLIC_ESI validation, LKG v1/v2 compatibility, freshness boundaries, offline fallback,
+snapshots. They cover PUBLIC_ESI validation, LKG v1/v2/v3 compatibility, freshness boundaries, offline fallback,
 background replacement, duplicate invalidation, cancellation/disable races, cache atomicity, repository/provider
-behavior, identity metadata, Alliance Directory projection and metadata enrichment, old-Host compatibility, and
+behavior, identity metadata, typed System Ownership, Alliance Directory ID consistency and metadata enrichment,
+old-Host compatibility, and
 canonical standalone JAR packaging without live Internet.

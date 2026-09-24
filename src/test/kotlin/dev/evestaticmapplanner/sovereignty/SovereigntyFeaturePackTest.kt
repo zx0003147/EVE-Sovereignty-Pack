@@ -23,6 +23,9 @@ import dev.evestaticmapplanner.feature.api.SystemInfoProvider
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistration
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistry
 import dev.evestaticmapplanner.feature.api.StandardFeatureCapabilities
+import dev.evestaticmapplanner.feature.api.SovereigntyCapability
+import dev.evestaticmapplanner.feature.api.SovereigntyProvider
+import dev.evestaticmapplanner.feature.api.SovereigntyRegistration
 import java.nio.file.Path
 import java.util.ServiceLoader
 import java.util.jar.JarFile
@@ -135,6 +138,23 @@ class SovereigntyFeaturePackTest {
         assertFalse(directory.active)
     }
 
+    @Test
+    fun `Feature API 2_5 Host receives typed sovereignty provider and shutdown stops publication`() {
+        val sovereignty = RecordingSovereigntyCapability()
+        val context = RecordingContext(sovereignty = sovereignty)
+
+        val session = embeddedFeaturePack().start(context)
+
+        assertTrue(sovereignty.active)
+        val ownership = checkNotNull(sovereignty.provider).snapshot().systems
+            .single { it.systemId == 30_004_759 }
+        assertEquals(1_354_830_081L, ownership.allianceId)
+        assertEquals("Goonswarm Federation", ownership.allianceName)
+
+        session.close()
+        assertFalse(sovereignty.active)
+    }
+
     private fun embeddedFeaturePack() = SovereigntyFeaturePack(
         SovereigntyRuntimeComposition(SovereigntyDataSourceMode.EMBEDDED),
     )
@@ -161,6 +181,7 @@ class SovereigntyFeaturePackTest {
 
     private class RecordingContext(
         private val allianceDirectory: RecordingAllianceDirectoryCapability? = null,
+        private val sovereignty: RecordingSovereigntyCapability? = null,
     ) : FeaturePackContext {
         val overlayRegistry = RecordingOverlayRegistry()
         val systemInfoRegistry = RecordingSystemInfoRegistry()
@@ -190,11 +211,33 @@ class SovereigntyFeaturePackTest {
 
         override fun capabilities(): FeatureCapabilityLookup = object : FeatureCapabilityLookup {
             override fun <T : FeatureCapability> find(key: FeatureCapabilityKey<T>): T? =
-                if (key == StandardFeatureCapabilities.ALLIANCE_DIRECTORY && allianceDirectory != null) {
-                    key.type.cast(allianceDirectory)
-                } else {
-                    null
+                when {
+                    key == StandardFeatureCapabilities.ALLIANCE_DIRECTORY && allianceDirectory != null ->
+                        key.type.cast(allianceDirectory)
+                    key == StandardFeatureCapabilities.SOVEREIGNTY && sovereignty != null ->
+                        key.type.cast(sovereignty)
+                    else -> null
                 }
+        }
+    }
+
+    private class RecordingSovereigntyCapability : SovereigntyCapability {
+        var provider: SovereigntyProvider? = null
+        var active = false
+        var refreshes = 0
+
+        override fun register(provider: SovereigntyProvider): SovereigntyRegistration {
+            this.provider = provider
+            active = true
+            return object : SovereigntyRegistration {
+                override fun requestRefresh() {
+                    if (active) refreshes += 1
+                }
+
+                override fun close() {
+                    active = false
+                }
+            }
         }
     }
 

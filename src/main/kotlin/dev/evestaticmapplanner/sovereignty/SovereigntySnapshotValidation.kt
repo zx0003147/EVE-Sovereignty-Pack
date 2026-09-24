@@ -30,6 +30,9 @@ internal object SovereigntySnapshotValidation {
             if (record.corporationName?.isCanonicalText() == false) {
                 return "$context has an empty or invalid corporationName"
             }
+            if (record.corporationId != null && record.corporationId <= 0) {
+                return "$context has invalid corporationId ${record.corporationId}"
+            }
             if (record.sovereigntyStatus != PUBLIC_ESI_CLAIMED_STATUS) {
                 return "$context has unsupported sovereigntyStatus '${record.sovereigntyStatus}'"
             }

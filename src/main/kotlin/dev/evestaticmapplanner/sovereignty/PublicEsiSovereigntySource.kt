@@ -51,6 +51,7 @@ internal class PublicEsiSovereigntySource(
                 corporationName = owner.corporationId?.let(namesById::getValue),
                 sovereigntyStatus = PUBLIC_ESI_CLAIMED_STATUS,
                 allianceId = owner.allianceId,
+                corporationId = owner.corporationId,
             )
         }
         return RemoteSnapshotResult.Success(SovereigntySnapshot(records))

@@ -16,6 +16,7 @@ internal data class SovereigntyInitialSnapshot(
     val snapshot: SovereigntySnapshot,
     val cacheState: SovereigntyInitialCacheState,
     val refreshRequired: Boolean,
+    val observedAt: java.time.Instant?,
 )
 
 /** Separates local LKG selection from remote refresh so Pack startup never waits for network. */
@@ -38,6 +39,7 @@ internal class CachedRemoteSovereigntySource(
                 snapshot = cached.snapshot,
                 cacheState = SovereigntyInitialCacheState.FRESH,
                 refreshRequired = false,
+                observedAt = cached.savedAt,
             )
         } else {
             logLegacyIdentityIfPresent(cached.snapshot)
@@ -50,12 +52,14 @@ internal class CachedRemoteSovereigntySource(
                 snapshot = cached.snapshot,
                 cacheState = SovereigntyInitialCacheState.STALE_LAST_GOOD,
                 refreshRequired = true,
+                observedAt = cached.savedAt,
             )
         }
         SovereigntyCacheLoadResult.Miss -> SovereigntyInitialSnapshot(
             snapshot = SovereigntySnapshot.empty("No cached PUBLIC_ESI sovereignty snapshot; refresh pending"),
             cacheState = SovereigntyInitialCacheState.MISSING,
             refreshRequired = true,
+            observedAt = null,
         )
         is SovereigntyCacheLoadResult.Unusable -> {
             logger.log(
@@ -69,6 +73,7 @@ internal class CachedRemoteSovereigntySource(
                 ),
                 cacheState = SovereigntyInitialCacheState.UNUSABLE,
                 refreshRequired = true,
+                observedAt = null,
             )
         }
     }

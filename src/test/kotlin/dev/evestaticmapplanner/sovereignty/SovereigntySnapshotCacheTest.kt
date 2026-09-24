@@ -18,7 +18,14 @@ class SovereigntySnapshotCacheTest {
         val cache = FileSovereigntySnapshotCache(root.resolve("cache/public-esi-lkg.json"))
         val expected = snapshot(
             SovereigntyRecord(30_004_760, "Alliance \"Two\"", null, PUBLIC_ESI_CLAIMED_STATUS, 99_000_002),
-            SovereigntyRecord(30_004_759, "Alliance One", "Corporation \\ One", PUBLIC_ESI_CLAIMED_STATUS, 99_000_001),
+            SovereigntyRecord(
+                30_004_759,
+                "Alliance One",
+                "Corporation \\ One",
+                PUBLIC_ESI_CLAIMED_STATUS,
+                99_000_001,
+                98_000_001,
+            ),
         )
 
         assertEquals(SovereigntyCacheSaveResult.Saved, cache.save(expected))
@@ -49,7 +56,7 @@ class SovereigntySnapshotCacheTest {
 
     @Test
     fun `unsupported format version is unusable`() = withCacheText(
-        """{"formatVersion":3,"source":"PUBLIC_ESI","records":[]}""",
+        """{"formatVersion":4,"source":"PUBLIC_ESI","records":[]}""",
     ) { cache ->
         val result = assertIs<SovereigntyCacheLoadResult.Unusable>(cache.load())
         assertTrue(result.reason.contains("formatVersion"))
@@ -84,6 +91,16 @@ class SovereigntySnapshotCacheTest {
 
         assertEquals("Legacy Alliance", record.allianceName)
         assertEquals(null, record.allianceId)
+    }
+
+    @Test
+    fun `legacy v2 cache remains readable without corporation ID`() = withCacheText(
+        """{"formatVersion":2,"source":"PUBLIC_ESI","records":[{"systemId":30004759,"allianceId":99000001,"allianceName":"Alliance","corporationName":"Corporation","sovereigntyStatus":"Claimed"}]}""",
+    ) { cache ->
+        val record = assertIs<SovereigntyCacheLoadResult.Hit>(cache.load()).snapshot.records.single()
+
+        assertEquals(99_000_001, record.allianceId)
+        assertEquals(null, record.corporationId)
     }
 
     @Test

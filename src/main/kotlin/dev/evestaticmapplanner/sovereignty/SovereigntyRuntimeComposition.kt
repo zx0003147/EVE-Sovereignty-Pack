@@ -19,6 +19,8 @@ internal data class SovereigntyRuntimeActivation(
     val refreshSource: CachedRemoteSovereigntySource?,
     val allianceMetadataState: AllianceMetadataState,
     val allianceMetadataSource: PublicEsiAllianceMetadataSource?,
+    val initialObservedAt: java.time.Instant?,
+    val clock: Clock,
 )
 
 /** The single composition point that maps a source mode to the repository's provider boundary. */
@@ -55,6 +57,8 @@ internal class SovereigntyRuntimeComposition(
             refreshSource = null,
             allianceMetadataState = AllianceMetadataState(),
             allianceMetadataSource = null,
+            initialObservedAt = null,
+            clock = clock,
         )
         SovereigntyDataSourceMode.PUBLIC_ESI -> {
             val sharedClient = DeferredPublicEsiClient(publicEsiClientFactory)
@@ -74,6 +78,8 @@ internal class SovereigntyRuntimeComposition(
                     cache = metadataCache,
                     clock = clock,
                 ),
+                initialObservedAt = initial.observedAt,
+                clock = clock,
             )
         }
     }

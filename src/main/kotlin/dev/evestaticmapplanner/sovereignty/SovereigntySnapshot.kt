@@ -8,6 +8,7 @@ internal data class SovereigntyRecord(
     val corporationName: String?,
     val sovereigntyStatus: String,
     val allianceId: Int? = null,
+    val corporationId: Int? = null,
 )
 
 internal data class SovereigntySnapshotMetadata(

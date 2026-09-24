@@ -10,6 +10,7 @@ import dev.evestaticmapplanner.feature.api.SystemOwnershipDto
 /** Pure in-memory mapping. Calling snapshot never performs HTTP, cache I/O, or refresh work. */
 internal class PackSovereigntyProvider(
     private val state: SovereigntyPublicationState,
+    private val refreshRequest: SovereigntyRefreshRequest = SovereigntyRefreshRequest(),
 ) : SovereigntyProvider {
     override fun snapshot(): SovereigntySnapshotDto {
         val current = state.snapshot()
@@ -45,6 +46,8 @@ internal class PackSovereigntyProvider(
             errorMessage = current.errorMessage,
         )
     }
+
+    override fun requestRefresh(): Boolean = refreshRequest.request()
 }
 
 private fun PublishedSovereigntyFreshness.toApi() = when (this) {

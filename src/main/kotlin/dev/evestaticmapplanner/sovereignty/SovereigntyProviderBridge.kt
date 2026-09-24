@@ -34,6 +34,7 @@ internal object SovereigntyProviderBridge {
     fun register(
         context: FeaturePackContext,
         publicationState: SovereigntyPublicationState,
+        refreshRequest: SovereigntyRefreshRequest,
     ): SovereigntyProviderRegistration {
         val classLoader = SovereigntyProviderBridge::class.java.classLoader
         if (!requiredApiClasses.all { isPresent(it, classLoader) }) {
@@ -50,8 +51,9 @@ internal object SovereigntyProviderBridge {
                 "register",
                 FeaturePackContext::class.java,
                 SovereigntyPublicationState::class.java,
+                SovereigntyRefreshRequest::class.java,
             )
-            method.invoke(null, context, publicationState) as SovereigntyProviderRegistration
+            method.invoke(null, context, publicationState, refreshRequest) as SovereigntyProviderRegistration
         } catch (error: Throwable) {
             val cause = if (error is InvocationTargetException) error.targetException else error
             rethrowProviderBridgeFatal(cause)

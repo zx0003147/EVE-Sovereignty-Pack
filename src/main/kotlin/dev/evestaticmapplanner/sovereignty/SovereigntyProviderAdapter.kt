@@ -10,10 +10,11 @@ internal class SovereigntyProviderAdapter private constructor() {
         fun register(
             context: FeaturePackContext,
             publicationState: SovereigntyPublicationState,
+            refreshRequest: SovereigntyRefreshRequest,
         ): SovereigntyProviderRegistration {
             val capability = context.capabilities().find(StandardFeatureCapabilities.SOVEREIGNTY)
                 ?: return NoSovereigntyProviderRegistration
-            val registration = capability.register(PackSovereigntyProvider(publicationState))
+            val registration = capability.register(PackSovereigntyProvider(publicationState, refreshRequest))
             return object : SovereigntyProviderRegistration {
                 override val active: Boolean = true
                 override fun requestRefresh() = registration.requestRefresh()

@@ -61,8 +61,8 @@ class SovereigntyRefreshLifecycleTest {
 
         val session = runtime.start(client)
 
-        assertEquals("Fresh Alliance", runtime.context.dynamicOverlay.currentAlliance())
-        assertEquals(0, runtime.context.dynamicOverlay.refreshRequests.get())
+        assertEquals("Fresh Alliance", runtime.context.sovereignty.currentAlliance())
+        assertEquals(1, runtime.context.sovereignty.providerRefreshRequests.get())
         assertEquals(0, client.sovereigntyRequests.get())
         assertEquals(SovereigntyFreshnessDto.AVAILABLE, runtime.context.sovereignty.current().freshness)
         session.close()
@@ -77,15 +77,14 @@ class SovereigntyRefreshLifecycleTest {
 
         val session = runtime.start(client)
 
-        assertEquals("Stale Alliance", runtime.context.dynamicOverlay.currentAlliance())
+        assertEquals("Stale Alliance", runtime.context.sovereignty.currentAlliance())
         assertTrue(client.started.await(1, TimeUnit.SECONDS))
-        assertEquals(1, runtime.context.dynamicOverlay.refreshRequests.get())
+        assertEquals(1, runtime.context.sovereignty.providerRefreshRequests.get())
         client.release.countDown()
-        runtime.context.dynamicOverlay.awaitRefresh()
+        runtime.context.sovereignty.awaitRefresh()
 
-        assertEquals("Remote Alliance", runtime.context.dynamicOverlay.currentAlliance())
-        assertEquals("Remote Alliance", runtime.context.systemInfo.currentAlliance())
-        assertEquals(1, runtime.context.systemInfo.refreshes.get())
+        assertEquals("Remote Alliance", runtime.context.sovereignty.currentAlliance())
+        assertFalse(runtime.context.systemInfo.active.get())
         assertEquals("Remote Alliance", runtime.loadCache().records.single().allianceName)
         assertEquals(1, client.sovereigntyRequests.get())
         assertEquals(1, client.namesRequests.get())
@@ -103,12 +102,12 @@ class SovereigntyRefreshLifecycleTest {
         val session = runtime.start(client)
         assertTrue(client.started.await(1, TimeUnit.SECONDS))
 
-        repeat(3) { runtime.context.dynamicOverlay.requestAgain() }
+        repeat(3) { runtime.context.sovereignty.requestProviderRefresh() }
         client.release.countDown()
-        runtime.context.dynamicOverlay.awaitAllRefreshes()
+        runtime.context.sovereignty.awaitRefresh()
 
         assertEquals(1, client.sovereigntyRequests.get())
-        assertEquals("Remote Alliance", runtime.context.dynamicOverlay.currentAlliance())
+        assertEquals("Remote Alliance", runtime.context.sovereignty.currentAlliance())
         session.close()
     }
 
@@ -121,12 +120,12 @@ class SovereigntyRefreshLifecycleTest {
         val client = ControlledPublicEsiClient(RemoteMode.FAILURE)
         val session = runtime.start(client)
 
-        assertEquals("Stale Alliance", runtime.context.dynamicOverlay.currentAlliance())
+        assertEquals("Stale Alliance", runtime.context.sovereignty.currentAlliance())
         assertTrue(client.started.await(1, TimeUnit.SECONDS))
         client.release.countDown()
-        runtime.context.dynamicOverlay.awaitRefresh()
+        runtime.context.sovereignty.awaitRefresh()
 
-        assertEquals("Stale Alliance", runtime.context.dynamicOverlay.currentAlliance())
+        assertEquals("Stale Alliance", runtime.context.sovereignty.currentAlliance())
         assertEquals(original, Files.readString(runtime.cachePath))
         assertEquals(savedAt, Files.getLastModifiedTime(runtime.cachePath).toInstant())
         assertEquals(SovereigntyFreshnessDto.STALE, runtime.context.sovereignty.current().freshness)
@@ -140,12 +139,12 @@ class SovereigntyRefreshLifecycleTest {
         val client = ControlledPublicEsiClient(RemoteMode.SUCCESS)
         val session = runtime.start(client)
 
-        assertTrue(runtime.context.dynamicOverlay.currentSnapshot().entries.isEmpty())
+        assertTrue(runtime.context.sovereignty.current().systems.isEmpty())
         assertTrue(client.started.await(1, TimeUnit.SECONDS))
         client.release.countDown()
-        runtime.context.dynamicOverlay.awaitRefresh()
+        runtime.context.sovereignty.awaitRefresh()
 
-        assertEquals("Remote Alliance", runtime.context.dynamicOverlay.currentAlliance())
+        assertEquals("Remote Alliance", runtime.context.sovereignty.currentAlliance())
         assertEquals("Remote Alliance", runtime.loadCache().records.single().allianceName)
         session.close()
     }
@@ -155,15 +154,15 @@ class SovereigntyRefreshLifecycleTest {
         val client = ControlledPublicEsiClient(RemoteMode.FAILURE)
         val session = runtime.start(client)
 
-        assertTrue(runtime.context.dynamicOverlay.currentSnapshot().entries.isEmpty())
+        assertTrue(runtime.context.sovereignty.current().systems.isEmpty())
         assertTrue(client.started.await(1, TimeUnit.SECONDS))
         client.release.countDown()
-        runtime.context.dynamicOverlay.awaitRefresh()
+        runtime.context.sovereignty.awaitRefresh()
 
-        assertTrue(runtime.context.dynamicOverlay.currentSnapshot().entries.isEmpty())
+        assertTrue(runtime.context.sovereignty.current().systems.isEmpty())
         assertFalse(Files.exists(runtime.cachePath))
         assertEquals(SovereigntyFreshnessDto.UNAVAILABLE, runtime.context.sovereignty.current().freshness)
-        assertTrue(runtime.context.dynamicOverlay.active.get())
+        assertTrue(runtime.context.sovereignty.active.get())
         session.close()
     }
 
@@ -174,12 +173,12 @@ class SovereigntyRefreshLifecycleTest {
         val client = ControlledPublicEsiClient(RemoteMode.SUCCESS)
         val session = runtime.start(client)
 
-        assertTrue(runtime.context.dynamicOverlay.currentSnapshot().entries.isEmpty())
+        assertTrue(runtime.context.sovereignty.current().systems.isEmpty())
         assertTrue(client.started.await(1, TimeUnit.SECONDS))
         client.release.countDown()
-        runtime.context.dynamicOverlay.awaitRefresh()
+        runtime.context.sovereignty.awaitRefresh()
 
-        assertEquals("Remote Alliance", runtime.context.dynamicOverlay.currentAlliance())
+        assertEquals("Remote Alliance", runtime.context.sovereignty.currentAlliance())
         assertEquals("Remote Alliance", runtime.loadCache().records.single().allianceName)
         assertTrue(runtime.context.events.any { it.contains("Ignoring unusable") })
         session.close()
@@ -192,10 +191,9 @@ class SovereigntyRefreshLifecycleTest {
         assertTrue(client.started.await(1, TimeUnit.SECONDS))
 
         session.close()
-        runtime.context.dynamicOverlay.awaitRefresh()
 
         assertTrue(client.closed.get())
-        assertFalse(runtime.context.dynamicOverlay.active.get())
+        assertFalse(runtime.context.sovereignty.active.get())
         assertFalse(Files.exists(runtime.cachePath))
         assertEquals(0, runtime.context.systemInfo.refreshes.get())
         assertTrue(runtime.temporaryCacheFiles().isEmpty())
@@ -212,9 +210,8 @@ class SovereigntyRefreshLifecycleTest {
 
         session.close()
         client.release.countDown()
-        runtime.context.dynamicOverlay.awaitRefresh()
 
-        assertFalse(runtime.context.dynamicOverlay.active.get())
+        assertFalse(runtime.context.sovereignty.active.get())
         assertFalse(runtime.context.systemInfo.active.get())
         assertEquals(original, Files.readString(runtime.cachePath))
         assertEquals(0, runtime.context.systemInfo.refreshes.get())
@@ -234,7 +231,7 @@ class SovereigntyRefreshLifecycleTest {
             assertTrue(client.started.await(1, TimeUnit.SECONDS))
             assertEquals(0, client.sovereigntyRequests.get())
             client.release.countDown()
-            runtime.context.dynamicOverlay.awaitRefresh()
+            runtime.context.allianceDirectory.awaitRefresh()
 
             val enriched = runtime.context.allianceDirectory.current().alliances.single()
             assertEquals(99_000_001L, enriched.allianceId)
@@ -254,10 +251,10 @@ class SovereigntyRefreshLifecycleTest {
             val session = runtime.start(client)
             assertTrue(client.started.await(1, TimeUnit.SECONDS))
             client.release.countDown()
-            runtime.context.dynamicOverlay.awaitRefresh()
+            runtime.context.awaitEvent("retaining last-good metadata")
 
-            assertEquals("Cached Alliance", runtime.context.dynamicOverlay.currentAlliance())
-            assertEquals("Cached Alliance", runtime.context.systemInfo.currentAlliance())
+            assertEquals("Cached Alliance", runtime.context.sovereignty.currentAlliance())
+            assertFalse(runtime.context.systemInfo.active.get())
             val directory = runtime.context.allianceDirectory.current().alliances.single()
             assertEquals("Cached Alliance", directory.name)
             assertEquals(null, directory.ticker)
@@ -274,7 +271,6 @@ class SovereigntyRefreshLifecycleTest {
             assertTrue(client.started.await(1, TimeUnit.SECONDS))
 
             session.close()
-            runtime.context.dynamicOverlay.awaitRefresh()
 
             assertTrue(client.closed.get())
             assertFalse(Files.exists(runtime.metadataCachePath))
@@ -288,13 +284,17 @@ class SovereigntyRefreshLifecycleTest {
             SovereigntyRuntimeComposition.ALLIANCE_METADATA_LKG_CACHE_PATH,
         )
 
-        fun start(client: ControlledPublicEsiClient) = SovereigntyFeaturePack(
-            SovereigntyRuntimeComposition(
-                dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
-                publicEsiClientFactory = { client },
-                clock = FIXED_CLOCK,
-            ),
-        ).start(context)
+        fun start(client: ControlledPublicEsiClient): dev.evestaticmapplanner.feature.api.FeaturePackSession {
+            val session = SovereigntyFeaturePack(
+                SovereigntyRuntimeComposition(
+                    dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
+                    publicEsiClientFactory = { client },
+                    clock = FIXED_CLOCK,
+                ),
+            ).start(context)
+            context.sovereignty.requestProviderRefresh()
+            return session
+        }
 
         fun saveCache(snapshot: SovereigntySnapshot, savedAt: Instant) {
             assertEquals(SovereigntyCacheSaveResult.Saved, FileSovereigntySnapshotCache(cachePath).save(snapshot))
@@ -351,6 +351,15 @@ class SovereigntyRefreshLifecycleTest {
                     else -> null
                 }
         }
+
+        fun awaitEvent(fragment: String) {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+            while (System.nanoTime() < deadline) {
+                if (events.any { fragment in it }) return
+                Thread.sleep(10)
+            }
+            assertTrue(events.any { fragment in it }, "event containing '$fragment' was not logged")
+        }
     }
 
     private class RecordingSovereigntyCapability : SovereigntyCapability {
@@ -364,6 +373,8 @@ class SovereigntyRefreshLifecycleTest {
         )
         val active = AtomicBoolean(false)
         val refreshes = AtomicInteger()
+        val providerRefreshRequests = AtomicInteger()
+        private val refreshCompletion = CountDownLatch(1)
 
         override fun register(provider: SovereigntyProvider): SovereigntyRegistration {
             this.provider.set(provider)
@@ -374,6 +385,7 @@ class SovereigntyRefreshLifecycleTest {
                     if (active.get()) {
                         refreshes.incrementAndGet()
                         latest.set(provider.snapshot())
+                        refreshCompletion.countDown()
                     }
                 }
 
@@ -384,6 +396,17 @@ class SovereigntyRefreshLifecycleTest {
         }
 
         fun current(): SovereigntySnapshotDto = latest.get()
+
+        fun currentAlliance(): String? = current().systems.singleOrNull()?.allianceName
+
+        fun requestProviderRefresh(): Boolean {
+            providerRefreshRequests.incrementAndGet()
+            return provider.get().requestRefresh()
+        }
+
+        fun awaitRefresh() {
+            assertTrue(refreshCompletion.await(2, TimeUnit.SECONDS), "typed Sovereignty refresh did not finish")
+        }
     }
 
     private class RecordingAllianceDirectoryCapability : AllianceDirectoryCapability {
@@ -391,6 +414,7 @@ class SovereigntyRefreshLifecycleTest {
         private val latest = AtomicReference(AllianceDirectoryProviderSnapshot(emptyList()))
         val active = AtomicBoolean(false)
         val refreshes = AtomicInteger()
+        private val refreshCompletion = CountDownLatch(1)
 
         override fun register(provider: AllianceDirectoryProvider): AllianceDirectoryRegistration {
             this.provider.set(provider)
@@ -401,6 +425,7 @@ class SovereigntyRefreshLifecycleTest {
                     if (active.get()) {
                         refreshes.incrementAndGet()
                         latest.set(provider.snapshot())
+                        refreshCompletion.countDown()
                     }
                 }
 
@@ -411,6 +436,10 @@ class SovereigntyRefreshLifecycleTest {
         }
 
         fun current(): AllianceDirectoryProviderSnapshot = latest.get()
+
+        fun awaitRefresh() {
+            assertTrue(refreshCompletion.await(2, TimeUnit.SECONDS), "Alliance Directory refresh did not finish")
+        }
     }
 
     private class RecordingDynamicOverlayCapability : DynamicOverlayCapability {

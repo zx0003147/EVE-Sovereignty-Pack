@@ -3,8 +3,9 @@
 ## What it is
 
 EVE Sovereignty Pack is the first-party external Sovereignty Feature Pack for EVE Static Map Planner. It contributes
-typed System Ownership snapshots, Sovereignty overlays, and structured System Info through Core's Feature API while
-keeping Sovereignty acquisition, cache, refresh, and identity metadata outside the Core repository.
+typed System Ownership snapshots through Core's Feature API while keeping Sovereignty acquisition, cache, refresh,
+and identity metadata outside the Core repository. Current Hosts build map and System Info presentation from that one
+typed snapshot; legacy Overlay/System Info providers remain only as an old-Host compatibility fallback.
 
 Core does not bundle this Pack. This repository builds the canonical standalone `pack.jar` installed by the Host.
 
@@ -13,7 +14,7 @@ Core does not bundle this Pack. This repository builds the canonical standalone 
 - JDK 25
 - Feature API runtime contract: `2` (frozen)
 - Build artifact dependency: `dev.evestaticmapplanner:feature-api:2.5.0`
-- Pack version: `0.4.0`
+- Pack version: `0.5.0`
 - A Maven repository containing the Feature API artifact
 - A corresponding EVE Static Map Planner release that hosts Feature API runtime contract `2`
 
@@ -23,18 +24,17 @@ The Pack consumes Feature API as a Maven coordinate. It has no Core source or Gr
 
 - Anonymous Public ESI Sovereignty acquisition; no OAuth, SSO, character token, or Character ESI access.
 - Validated Last Known Good (LKG) fallback for offline or unavailable startup.
-- A low-priority territory Overlay contribution and Sovereignty section in System Info.
-- Stable alliance visual identity based on `allianceId`.
+- Typed Sovereignty publication as the sole business-data path on current Hosts.
+- Legacy low-priority Overlay and System Info contributions only when the Host lacks typed Sovereignty capability.
 - Alliance Directory publication for Alliance IDs observed in the current Sovereignty snapshot.
 - Typed, in-memory System Ownership publication for Planner Core, AI, MCP, and future consumers.
 - Background public-ESI Alliance detail enrichment with independent last-good name/ticker and HTTP validator caching.
-- Alliance color, territory, and emblem presentation metadata for Core's generic renderer.
-- Sovereignty Preferences integration through Host behavior when the installed provider is available.
+- Stable Alliance IDs for Planner-owned color, territory, emblem, and Preferences presentation.
 
 The Pack publishes a fresh or stale valid Sovereignty LKG and any cached Alliance metadata during startup without
 waiting for the network. When either cache needs refresh, it requests lifecycle-owned background work through Feature
 API 2. Sovereignty and Alliance metadata use independent caches, so detail or ticker failures never invalidate the
-territory Overlay, System Info, or Sovereignty LKG.
+typed Sovereignty publication, its legacy presentation fallback, or the Sovereignty LKG.
 
 See `docs/sovereignty.md` for the accepted data, cache, lifecycle, and presentation behavior.
 
@@ -93,9 +93,9 @@ worktrees without remote publication.
 Production code depends only on Feature API plus JDK APIs; it does not depend on Core source, Core projects, Compose,
 SQLite, or MCP. Feature API is `compileOnly`, so the Host supplies the single runtime contract identity. The Pack owns
 its PUBLIC_ESI composition, canonical snapshot, independent Sovereignty and Alliance metadata LKG policies,
-typed Sovereignty/Overlay/System Info/Alliance Directory providers, and presentation metadata. Core owns the
-System Ownership domain model, lifecycle hosting,
-compatibility, storage path mediation, aggregation, rendering, Pack management, and Preferences UI behavior.
+typed Sovereignty and Alliance Directory providers, plus legacy Overlay/System Info compatibility adapters. Core owns
+the System Ownership domain model, lifecycle hosting, compatibility, storage path mediation, aggregation, map and
+System Info presentation, rendering, Pack management, and Preferences UI behavior.
 
 ## CI foundation
 

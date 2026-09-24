@@ -17,6 +17,9 @@ import dev.evestaticmapplanner.feature.api.PackId
 import dev.evestaticmapplanner.feature.api.PackVersion
 import dev.evestaticmapplanner.feature.api.StandardFeatureCapabilities
 import dev.evestaticmapplanner.feature.api.SystemInfoRegistration
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class SovereigntyFeaturePack internal constructor(
@@ -60,8 +63,9 @@ class SovereigntyFeaturePack internal constructor(
         var allianceDirectoryRegistration: SovereigntyAllianceDirectoryRegistration =
             NoSovereigntyAllianceDirectoryRegistration
         var sovereigntyRegistration: SovereigntyProviderRegistration = NoSovereigntyProviderRegistration
+        val refreshRequest = SovereigntyRefreshRequest()
         try {
-            sovereigntyRegistration = SovereigntyProviderBridge.register(context, publicationState)
+            sovereigntyRegistration = SovereigntyProviderBridge.register(context, publicationState, refreshRequest)
             allianceDirectoryRegistration = SovereigntyAllianceDirectoryBridge.register(
                 context,
                 repository,
@@ -70,11 +74,15 @@ class SovereigntyFeaturePack internal constructor(
             val metadataRefreshRequired = allianceDirectoryRegistration.active &&
                 activation.allianceMetadataSource?.requiresRefresh(repository.observedAllianceNames()) == true
             val backgroundRefreshRequired = activation.refreshRequired || metadataRefreshRequired
-            val overlayProvider = SovereigntyOverlayProvider(repository)
-            val dynamicOverlay = activation.refreshSource?.let {
+            val useLegacyPresentation = !sovereigntyRegistration.active
+            val dynamicOverlay = activation.refreshSource?.takeIf { useLegacyPresentation }?.let {
                 context.capabilities().find(StandardFeatureCapabilities.DYNAMIC_OVERLAY)
             }
-            val dynamicRegistration = if (activation.refreshSource != null && dynamicOverlay != null) {
+            if (
+                backgroundRefreshRequired &&
+                activation.refreshSource != null &&
+                (sovereigntyRegistration.active || dynamicOverlay != null)
+            ) {
                 refreshCoordinator = SovereigntyRefreshCoordinator(
                     repository = repository,
                     source = activation.refreshSource,
@@ -87,23 +95,38 @@ class SovereigntyFeaturePack internal constructor(
                     sovereigntyRegistration = sovereigntyRegistration,
                     clock = activation.clock,
                 )
+            }
+            val dynamicRegistration = if (useLegacyPresentation && dynamicOverlay != null && refreshCoordinator != null) {
+                val overlayProvider = SovereigntyOverlayProvider(repository)
+                val coordinator = checkNotNull(refreshCoordinator)
                 dynamicOverlay.register(
-                    RefreshingSovereigntyOverlayProvider(overlayProvider, refreshCoordinator::refreshOnce),
+                    RefreshingSovereigntyOverlayProvider(overlayProvider, coordinator::refreshOnce),
                 )
             } else {
-                if (backgroundRefreshRequired) {
+                if (backgroundRefreshRequired && refreshCoordinator == null) {
                     context.logger().log(
                         FeaturePackLogLevel.WARN,
-                        "Host does not expose Dynamic Overlay capability; PUBLIC_ESI background refresh is unavailable",
+                        "Host exposes neither typed Sovereignty refresh nor Dynamic Overlay; background refresh is unavailable",
                         null,
                     )
                 }
-                activation.refreshSource?.close()
                 null
             }
-            overlayRegistration = dynamicRegistration ?: context.overlays().register(overlayProvider)
-            systemInfoRegistration = context.systemInfo().register(SovereigntySystemInfoProvider(repository))
-            refreshCoordinator?.attachSystemInfoRefresh(systemInfoRegistration::refresh)
+            if (useLegacyPresentation) {
+                overlayRegistration = dynamicRegistration
+                    ?: context.overlays().register(SovereigntyOverlayProvider(repository))
+                systemInfoRegistration = context.systemInfo().register(SovereigntySystemInfoProvider(repository))
+                val legacySystemInfoRegistration = checkNotNull(systemInfoRegistration)
+                refreshCoordinator?.attachSystemInfoRefresh(legacySystemInfoRegistration::refresh)
+            } else {
+                refreshCoordinator?.let { coordinator -> refreshRequest.attach(coordinator::requestRefresh) }
+                context.logger().log(
+                    FeaturePackLogLevel.INFO,
+                    "Typed Sovereignty is active; legacy Overlay and System Info providers are not registered",
+                    null,
+                )
+            }
+            if (refreshCoordinator == null) activation.refreshSource?.close()
             context.logger().log(FeaturePackLogLevel.INFO, "Sovereignty Pack started", null)
             val session = SovereigntySession(
                 overlayRegistration = overlayRegistration,
@@ -111,11 +134,13 @@ class SovereigntyFeaturePack internal constructor(
                 refreshCoordinator = refreshCoordinator,
                 allianceDirectoryRegistration = allianceDirectoryRegistration,
                 sovereigntyRegistration = sovereigntyRegistration,
+                refreshRequest = refreshRequest,
                 logger = context.logger(),
             )
             if (backgroundRefreshRequired) dynamicRegistration?.requestRefresh()
             return session
         } catch (error: Throwable) {
+            refreshRequest.clear()
             runCatching { refreshCoordinator?.close() }
             runCatching { sovereigntyRegistration.close() }
             runCatching { allianceDirectoryRegistration.close() }
@@ -127,17 +152,19 @@ class SovereigntyFeaturePack internal constructor(
     }
 
     private class SovereigntySession(
-        private val overlayRegistration: OverlayRegistration,
-        private val systemInfoRegistration: SystemInfoRegistration,
+        private val overlayRegistration: OverlayRegistration?,
+        private val systemInfoRegistration: SystemInfoRegistration?,
         private val refreshCoordinator: SovereigntyRefreshCoordinator?,
         private val allianceDirectoryRegistration: SovereigntyAllianceDirectoryRegistration,
         private val sovereigntyRegistration: SovereigntyProviderRegistration,
+        private val refreshRequest: SovereigntyRefreshRequest,
         private val logger: FeaturePackLogger,
     ) : FeaturePackSession {
         private val closed = AtomicBoolean(false)
 
         override fun close() {
             if (!closed.compareAndSet(false, true)) return
+            refreshRequest.clear()
             var failure: Throwable? = null
             try {
                 refreshCoordinator?.close()
@@ -155,12 +182,12 @@ class SovereigntyFeaturePack internal constructor(
                 if (failure == null) failure = error else failure.addSuppressed(error)
             }
             try {
-                systemInfoRegistration.close()
+                systemInfoRegistration?.close()
             } catch (error: Throwable) {
                 if (failure == null) failure = error else failure.addSuppressed(error)
             }
             try {
-                overlayRegistration.close()
+                overlayRegistration?.close()
             } catch (error: Throwable) {
                 if (failure == null) failure = error else failure.addSuppressed(error)
             }
@@ -200,12 +227,47 @@ private class SovereigntyRefreshCoordinator(
     private val clock: java.time.Clock,
 ) : AutoCloseable {
     private val lock = Any()
+    private val executor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "sovereignty-refresh").apply { isDaemon = true }
+    }
     private var state = RefreshState.NOT_STARTED
     private var systemInfoRefresh: () -> Unit = {}
 
     fun attachSystemInfoRefresh(refresh: () -> Unit) = synchronized(lock) {
         check(state != RefreshState.CLOSED) { "Sovereignty refresh coordinator is closed" }
         systemInfoRefresh = refresh
+    }
+
+    /** Schedules Pack-owned network work without blocking the Host's typed capability call. */
+    fun requestRefresh(): Boolean {
+        val accepted = synchronized(lock) {
+            if (state == RefreshState.NOT_STARTED) {
+                state = RefreshState.SCHEDULED
+                true
+            } else {
+                false
+            }
+        }
+        if (!accepted) return false
+        return try {
+            executor.execute {
+                val scheduled = synchronized(lock) {
+                    if (state == RefreshState.SCHEDULED) {
+                        state = RefreshState.NOT_STARTED
+                        true
+                    } else {
+                        false
+                    }
+                }
+                if (scheduled) refreshOnce()
+            }
+            true
+        } catch (_: RejectedExecutionException) {
+            synchronized(lock) {
+                if (state == RefreshState.SCHEDULED) state = RefreshState.NOT_STARTED
+            }
+            false
+        }
     }
 
     fun refreshOnce() {
@@ -318,10 +380,24 @@ private class SovereigntyRefreshCoordinator(
                 true
             }
         }
-        if (shouldClose) source.close()
+        if (shouldClose) {
+            executor.shutdownNow()
+            if (!executor.awaitTermination(REFRESH_CLOSE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                logger.log(
+                    FeaturePackLogLevel.WARN,
+                    "Sovereignty refresh worker did not stop within the bounded close timeout",
+                    null,
+                )
+            }
+            source.close()
+        }
     }
 
-    private enum class RefreshState { NOT_STARTED, RUNNING, COMPLETED, CLOSED }
+    private enum class RefreshState { NOT_STARTED, SCHEDULED, RUNNING, COMPLETED, CLOSED }
+
+    private companion object {
+        const val REFRESH_CLOSE_TIMEOUT_MILLIS = 750L
+    }
 }
 
 private fun elapsedMillis(startedAt: Long): Long = (System.nanoTime() - startedAt) / 1_000_000

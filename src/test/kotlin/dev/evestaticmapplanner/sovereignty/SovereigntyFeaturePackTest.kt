@@ -146,6 +146,8 @@ class SovereigntyFeaturePackTest {
         val session = embeddedFeaturePack().start(context)
 
         assertTrue(sovereignty.active)
+        assertFalse(context.overlayRegistry.active)
+        assertFalse(context.systemInfoRegistry.active)
         val ownership = checkNotNull(sovereignty.provider).snapshot().systems
             .single { it.systemId == 30_004_759 }
         assertEquals(1_354_830_081L, ownership.allianceId)

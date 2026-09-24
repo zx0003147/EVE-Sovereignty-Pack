@@ -62,7 +62,7 @@ internal object SovereigntyAllianceDirectoryBridge {
             rethrowBridgeFatal(cause)
             context.logger().log(
                 FeaturePackLogLevel.WARN,
-                "Alliance Directory registration is unavailable; Sovereignty Overlay and System Info remain active",
+                "Alliance Directory registration is unavailable; Sovereignty publication remains active",
                 cause,
             )
             NoSovereigntyAllianceDirectoryRegistration

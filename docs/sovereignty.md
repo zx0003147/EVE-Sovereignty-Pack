@@ -35,13 +35,16 @@ The repository validates records and ignores invalid or duplicate fixture/provid
 partial input. PUBLIC_ESI acquisition is stricter: a bad remote record invalidates the complete remote snapshot before
 it can replace the LKG.
 
-## LKG v1 and v2
+## LKG v1, v2, and v3
 
 The Pack stores a versioned canonical Last Known Good snapshot through Pack-scoped `PackStorage` at the cache-relative
 path `public-esi-lkg.json`. This is a validated domain snapshot, not a raw HTTP cache, database, or copy of Core data.
 Writes use a complete temporary file followed by replacement; a failed write does not discard the previous LKG.
 
-- LKG v2 is the current write format and includes positive `allianceId` values.
+- LKG v3 is the current write format and includes positive `allianceId` values plus optional positive
+  `corporationId` values.
+- Structurally and semantically valid v2 files with Alliance IDs but no Corporation IDs remain readable for backward
+  compatibility.
 - Structurally and semantically valid v1 files remain readable for backward compatibility.
 - LKG v1 has no alliance IDs, so the Pack logs the legacy identity fallback and derives deterministic name-based
   presentation identity only until a later successful background refresh writes v2.

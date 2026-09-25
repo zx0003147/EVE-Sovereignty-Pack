@@ -14,7 +14,7 @@ Core does not bundle this Pack. This repository builds the canonical standalone 
 - JDK 25
 - Feature API runtime contract: `2` (frozen)
 - Build artifact dependency: `dev.evestaticmapplanner:feature-api:2.5.0`
-- Pack version: `0.5.0`
+- Pack version: `1.0.0`
 - A Maven repository containing the Feature API artifact
 - A corresponding EVE Static Map Planner release that hosts Feature API runtime contract `2`
 

@@ -26,7 +26,17 @@ class PublicEsiSovereigntySourceTest {
             assertEquals("Claimed", sovereigntyStatus)
             assertEquals(99_003_581, allianceId)
             assertEquals(98_599_770, corporationId)
+            assertEquals(false, isCapitalSystem)
         }
+    }
+
+    @Test
+    fun `capital flag is parsed from the alliance claim as a boolean`() {
+        val result = assertIs<RemoteSnapshotResult.Success>(
+            sourceForSovereigntyPayload(alliancePayload(isCapitalSystem = true)).fetchSnapshot(),
+        )
+
+        assertEquals(true, result.snapshot.records.single().isCapitalSystem)
     }
 
     @Test
@@ -96,7 +106,7 @@ class PublicEsiSovereigntySourceTest {
               "solar_systems": [
                 {
                   "solar_system_id": 30004759,
-                  "claim": {"alliance": {"corporation_id": 98599770}}
+                  "claim": {"alliance": {"corporation_id": 98599770, "is_capital_system": false}}
                 }
               ]
             }
@@ -132,7 +142,7 @@ class PublicEsiSovereigntySourceTest {
               "solar_systems": [
                 {
                   "solar_system_id": 30004759,
-                  "claim": {"alliance": {"alliance_id": 99003581}}
+                  "claim": {"alliance": {"alliance_id": 99003581, "is_capital_system": false}}
                 },
                 {
                   "solar_system_id": 30004759,
@@ -228,7 +238,10 @@ class PublicEsiSovereigntySourceTest {
             ]
         """.trimIndent()
 
-        fun alliancePayload(systemId: Int = 30_004_759) = """
+        fun alliancePayload(
+            systemId: Int = 30_004_759,
+            isCapitalSystem: Boolean = false,
+        ) = """
             {
               "solar_systems": [
                 {
@@ -236,7 +249,8 @@ class PublicEsiSovereigntySourceTest {
                   "claim": {
                     "alliance": {
                       "alliance_id": 99003581,
-                      "corporation_id": 98599770
+                      "corporation_id": 98599770,
+                      "is_capital_system": $isCapitalSystem
                     }
                   }
                 }

@@ -56,7 +56,7 @@ class SovereigntySnapshotCacheTest {
 
     @Test
     fun `unsupported format version is unusable`() = withCacheText(
-        """{"formatVersion":4,"source":"PUBLIC_ESI","records":[]}""",
+        """{"formatVersion":5,"source":"PUBLIC_ESI","records":[]}""",
     ) { cache ->
         val result = assertIs<SovereigntyCacheLoadResult.Unusable>(cache.load())
         assertTrue(result.reason.contains("formatVersion"))
@@ -101,6 +101,17 @@ class SovereigntySnapshotCacheTest {
 
         assertEquals(99_000_001, record.allianceId)
         assertEquals(null, record.corporationId)
+        assertEquals(null, record.isCapitalSystem)
+    }
+
+    @Test
+    fun `legacy v3 cache remains readable but marks capital data unavailable`() = withCacheText(
+        """{"formatVersion":3,"source":"PUBLIC_ESI","records":[{"systemId":30004759,"allianceId":99000001,"allianceName":"Alliance","corporationId":null,"corporationName":null,"sovereigntyStatus":"Claimed"}]}""",
+    ) { cache ->
+        val record = assertIs<SovereigntyCacheLoadResult.Hit>(cache.load()).snapshot.records.single()
+
+        assertEquals(99_000_001, record.allianceId)
+        assertEquals(null, record.isCapitalSystem)
     }
 
     @Test

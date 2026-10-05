@@ -87,9 +87,10 @@ private fun replaceFromTemporaryFile(temporaryPath: Path, finalPath: Path) {
 }
 
 internal object SovereigntySnapshotCacheCodec {
-    const val FORMAT_VERSION = 3
+    const val FORMAT_VERSION = 4
     private const val LEGACY_FORMAT_VERSION = 1
     private const val ALLIANCE_ID_FORMAT_VERSION = 2
+    private const val CORPORATION_ID_FORMAT_VERSION = 3
     const val SOURCE = "PUBLIC_ESI"
 
     fun encode(snapshot: SovereigntySnapshot): String {
@@ -110,6 +111,7 @@ internal object SovereigntySnapshotCacheCodec {
                 append(", \"corporationId\": ")
                 if (record.corporationId == null) append("null") else append(record.corporationId)
                 append(", \"sovereigntyStatus\": ").appendJsonString(record.sovereigntyStatus)
+                append(", \"isCapitalSystem\": ").append(requireNotNull(record.isCapitalSystem))
                 append('}')
                 if (index != snapshot.records.lastIndex) append(',')
                 append('\n')
@@ -133,6 +135,7 @@ internal object SovereigntySnapshotCacheCodec {
         if (formatVersion !in setOf(
                 LEGACY_FORMAT_VERSION.toLong(),
                 ALLIANCE_ID_FORMAT_VERSION.toLong(),
+                CORPORATION_ID_FORMAT_VERSION.toLong(),
                 FORMAT_VERSION.toLong(),
             )
         ) {
@@ -150,6 +153,7 @@ internal object SovereigntySnapshotCacheCodec {
         SovereigntySnapshotValidation.validatePublicEsi(
             snapshot,
             allowLegacyMissingAllianceIds = formatVersion == LEGACY_FORMAT_VERSION.toLong(),
+            allowLegacyMissingCapitalFlags = formatVersion < FORMAT_VERSION,
         )?.let { reason ->
             return unusable("Invalid canonical sovereignty snapshot: $reason")
         }
@@ -164,8 +168,12 @@ internal object SovereigntySnapshotCacheCodec {
             LEGACY_FORMAT_VERSION -> setOf("systemId", "allianceName", "corporationName", "sovereigntyStatus")
             ALLIANCE_ID_FORMAT_VERSION ->
                 setOf("systemId", "allianceId", "allianceName", "corporationName", "sovereigntyStatus")
+            CORPORATION_ID_FORMAT_VERSION -> setOf(
+                "systemId", "allianceId", "allianceName", "corporationId", "corporationName", "sovereigntyStatus",
+            )
             else -> setOf(
                 "systemId", "allianceId", "allianceName", "corporationId", "corporationName", "sovereigntyStatus",
+                "isCapitalSystem",
             )
         }
         if (fields.keys != expectedFields) return null
@@ -185,7 +193,9 @@ internal object SovereigntySnapshotCacheCodec {
             is JsonString -> corporation.value
             else -> return null
         }
-        val corporationId = if (formatVersion < FORMAT_VERSION) null else when (val corporation = fields["corporationId"]) {
+        val corporationId = if (formatVersion < CORPORATION_ID_FORMAT_VERSION) null else when (
+            val corporation = fields["corporationId"]
+        ) {
             JsonNull -> null
             is JsonNumber -> corporation.longValueOrNull()
                 ?.takeIf { it in 1..Int.MAX_VALUE.toLong() }
@@ -194,7 +204,18 @@ internal object SovereigntySnapshotCacheCodec {
             else -> return null
         }
         val sovereigntyStatus = (fields["sovereigntyStatus"] as? JsonString)?.value ?: return null
-        return SovereigntyRecord(systemId, allianceName, corporationName, sovereigntyStatus, allianceId, corporationId)
+        val isCapitalSystem = if (formatVersion < FORMAT_VERSION) null else {
+            (fields["isCapitalSystem"] as? JsonBoolean)?.value ?: return null
+        }
+        return SovereigntyRecord(
+            systemId = systemId,
+            allianceName = allianceName,
+            corporationName = corporationName,
+            sovereigntyStatus = sovereigntyStatus,
+            allianceId = allianceId,
+            corporationId = corporationId,
+            isCapitalSystem = isCapitalSystem,
+        )
     }
 
     private fun unusable(reason: String) = SovereigntyCacheLoadResult.Unusable(reason)

@@ -26,6 +26,7 @@ Each retained record contains:
 - positive `allianceId`
 - resolved alliance name
 - optional resolved corporation name
+- ESI's `is_capital_system` observation
 - Sovereignty status
 
 `allianceId` is the stable ownership identity. Names are display values and may change; new snapshots do not group or
@@ -35,19 +36,21 @@ The repository validates records and ignores invalid or duplicate fixture/provid
 partial input. PUBLIC_ESI acquisition is stricter: a bad remote record invalidates the complete remote snapshot before
 it can replace the LKG.
 
-## LKG v1, v2, and v3
+## LKG v1, v2, v3, and v4
 
 The Pack stores a versioned canonical Last Known Good snapshot through Pack-scoped `PackStorage` at the cache-relative
 path `public-esi-lkg.json`. This is a validated domain snapshot, not a raw HTTP cache, database, or copy of Core data.
 Writes use a complete temporary file followed by replacement; a failed write does not discard the previous LKG.
 
-- LKG v3 is the current write format and includes positive `allianceId` values plus optional positive
-  `corporationId` values.
+- LKG v4 is the current write format and includes positive `allianceId` values, optional positive `corporationId`
+  values, and the required `isCapitalSystem` observation.
+- Structurally and semantically valid v3 files with Corporation IDs but no capital observation remain readable for
+  backward compatibility. Their Alliance Capital provider stays `UNAVAILABLE` until a successful refresh writes v4.
 - Structurally and semantically valid v2 files with Alliance IDs but no Corporation IDs remain readable for backward
   compatibility.
 - Structurally and semantically valid v1 files remain readable for backward compatibility.
 - LKG v1 has no alliance IDs, so the Pack logs the legacy identity fallback and derives deterministic name-based
-  presentation identity only until a later successful background refresh writes v2.
+  presentation identity only until a later successful background refresh writes the current format.
 - Missing identity is never invented or represented as a real ESI alliance ID.
 - Unknown cache versions, extra/missing fields, malformed JSON, invalid records, or a wrong source marker are unusable
   and are never presented as fallback data.
@@ -73,7 +76,8 @@ The one-hour threshold is Pack product policy, not a CCP freshness guarantee.
 
 ## Refresh and lifecycle semantics
 
-On a current Host, the typed Sovereignty provider accepts the Host's post-first-frame refresh request and the Pack owns
+On a current Host, the typed Sovereignty and Alliance Capital providers accept the Host's post-first-frame refresh
+request and the Pack owns
 one bounded worker for the remote callback. On an older Host, Feature API 2's Dynamic Overlay capability supplies the
 same lifecycle trigger. The Pack accepts at most one required refresh per activation; it has no polling loop or timer.
 A successful callback validates the complete remote snapshot, writes a complete temporary cache file followed by
@@ -95,7 +99,7 @@ registers one low-priority `Sovereignty` Overlay layer plus one `Sovereignty` Sy
 older Planner releases usable; it is not a second business-data path in current Planner. Pack-owned legacy IDs and
 presentation metadata exist only inside that compatibility path.
 
-## Typed Sovereignty provider
+## Typed Sovereignty and Alliance Capital providers
 
 On a Host that exposes Feature API 2.5's optional Sovereignty capability, the Pack publishes the current immutable
 in-memory system ownership observation. `snapshot()` performs no HTTP or cache I/O. Stable alliance and corporation
@@ -105,6 +109,13 @@ ID. Successful refresh publishes `AVAILABLE`; refresh failure retains last-good 
 required; it never performs network or cache I/O on the Host thread. Closing the Pack registration removes the Core
 publication immediately. A reflective compatibility bridge keeps the same Pack linkable on Feature API 2.0-2.4
 Hosts, where Overlay and System Info continue to work.
+
+On a Host that exposes Feature API 2.6's optional Alliance Capital capability, the Pack derives capital observations
+from the same immutable Sovereignty publication state. It performs no second ESI request and owns no second cache.
+Every `is_capital_system=true` row becomes one record; duplicate capital observations for the same alliance remain
+visible so the Host can classify that alliance as ambiguous. Freshness, timestamp, source, failure fallback, refresh,
+and registration lifecycle mirror typed Sovereignty. A legacy v1-v3 LKG lacks this field, so Alliance Capital is
+`UNAVAILABLE` until a successful refresh supplies authoritative observations.
 
 ## Alliance Directory provider
 
@@ -160,15 +171,16 @@ invalidate the selected snapshot, or rebuild territory geometry. Preference stor
 ## Storage and dependency boundary
 
 The Pack uses only paths mediated by its Feature API `PackStorage` and never reaches into Core databases or services.
-Its committed build declares `dev.evestaticmapplanner:feature-api:2.5.0` as `compileOnly` and test input. It has no
+Its committed build declares `dev.evestaticmapplanner:feature-api:2.6.0` as `compileOnly` and test input. It has no
 Gradle project dependency on Feature API, permanent composite include, sibling path, or Core source dependency.
 Optional developer composite substitution remains command-line-only.
 
 ## Testing boundary
 
 Tests use injected HTTP senders, fake clocks, temporary Pack storage, embedded fixtures, and deterministic local
-snapshots. They cover PUBLIC_ESI validation, LKG v1/v2/v3 compatibility, freshness boundaries, offline fallback,
+snapshots. They cover PUBLIC_ESI validation, LKG v1/v2/v3/v4 compatibility, freshness boundaries, offline fallback,
 background replacement, duplicate invalidation, cancellation/disable races, cache atomicity, repository/provider
-behavior, identity metadata, typed System Ownership, Alliance Directory ID consistency and metadata enrichment,
+behavior, identity metadata, typed System Ownership, Alliance Capital observations and lifecycle, Alliance Directory
+ID consistency and metadata enrichment,
 new-Host retirement of legacy presentation registration, old-Host compatibility, and
 canonical standalone JAR packaging without live Internet.

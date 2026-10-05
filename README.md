@@ -13,8 +13,8 @@ Core does not bundle this Pack. This repository builds the canonical standalone 
 
 - JDK 25
 - Feature API runtime contract: `2` (frozen)
-- Build artifact dependency: `dev.evestaticmapplanner:feature-api:2.5.0`
-- Pack version: `1.0.0`
+- Build artifact dependency: `dev.evestaticmapplanner:feature-api:2.6.0`
+- Pack version: `1.1.0`
 - A Maven repository containing the Feature API artifact
 - A corresponding EVE Static Map Planner release that hosts Feature API runtime contract `2`
 
@@ -25,6 +25,7 @@ The Pack consumes Feature API as a Maven coordinate. It has no Core source or Gr
 - Anonymous Public ESI Sovereignty acquisition; no OAuth, SSO, character token, or Character ESI access.
 - Validated Last Known Good (LKG) fallback for offline or unavailable startup.
 - Typed Sovereignty publication as the sole business-data path on current Hosts.
+- Typed Alliance Capital publication derived from the same Sovereignty response and LKG.
 - Legacy low-priority Overlay and System Info contributions only when the Host lacks typed Sovereignty capability.
 - Alliance Directory publication for Alliance IDs observed in the current Sovereignty snapshot.
 - Typed, in-memory System Ownership publication for Planner Core, AI, MCP, and future consumers.
@@ -40,7 +41,7 @@ See `docs/sovereignty.md` for the accepted data, cache, lifecycle, and presentat
 
 ## Build
 
-For local development, pass a Maven repository containing Feature API `2.5.0`. The value is an artifact repository,
+For local development, pass a Maven repository containing Feature API `2.6.0`. The value is an artifact repository,
 not a Core checkout or project dependency.
 
 ```powershell
@@ -100,7 +101,7 @@ System Info presentation, rendering, Pack management, and Preferences UI behavio
 ## CI foundation
 
 `.github/workflows/sovereignty-ci.yml` contains the final standalone coordinate-consumption build shape, but is
-manual-only until Feature API `2.5.0` is published to an authorized production Maven repository. Before dispatch, the
+manual-only until Feature API `2.6.0` is published to an authorized production Maven repository. Before dispatch, the
 repository variable `FEATURE_API_MAVEN_REPOSITORY_URL` must identify that repository and package read permissions must
 be configured. The workflow deliberately fails its prerequisite check when the variable is absent; it never checks
 out Core source and does not use a permanent composite build.

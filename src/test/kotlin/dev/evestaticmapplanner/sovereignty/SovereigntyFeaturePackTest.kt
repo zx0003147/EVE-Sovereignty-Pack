@@ -1,6 +1,9 @@
 package dev.evestaticmapplanner.sovereignty
 
 import dev.evestaticmapplanner.feature.api.CoreVersion
+import dev.evestaticmapplanner.feature.api.AllianceCapitalCapability
+import dev.evestaticmapplanner.feature.api.AllianceCapitalProvider
+import dev.evestaticmapplanner.feature.api.AllianceCapitalRegistration
 import dev.evestaticmapplanner.feature.api.AllianceDirectoryCapability
 import dev.evestaticmapplanner.feature.api.AllianceDirectoryProvider
 import dev.evestaticmapplanner.feature.api.AllianceDirectoryRegistration
@@ -157,6 +160,45 @@ class SovereigntyFeaturePackTest {
         assertFalse(sovereignty.active)
     }
 
+    @Test
+    fun `Feature API 2_6 Host receives and closes Alliance Capital provider`() {
+        val capital = RecordingAllianceCapitalCapability()
+        val context = RecordingContext(allianceCapital = capital)
+        val cached = SovereigntySnapshot(
+            listOf(
+                SovereigntyRecord(
+                    systemId = 30_004_759,
+                    allianceName = "Capital Alliance",
+                    corporationName = null,
+                    sovereigntyStatus = PUBLIC_ESI_CLAIMED_STATUS,
+                    allianceId = 99_000_001,
+                    isCapitalSystem = true,
+                ),
+            ),
+        )
+        val pack = SovereigntyFeaturePack(
+            SovereigntyRuntimeComposition(
+                dataSourceMode = SovereigntyDataSourceMode.PUBLIC_ESI,
+                cacheFactory = {
+                    object : SovereigntySnapshotCache {
+                        override fun load() = SovereigntyCacheLoadResult.Hit(cached, java.time.Instant.now())
+                        override fun save(snapshot: SovereigntySnapshot) = SovereigntyCacheSaveResult.Saved
+                    }
+                },
+            ),
+        )
+
+        val session = pack.start(context)
+
+        assertTrue(capital.active)
+        val record = checkNotNull(capital.provider).snapshot().records.single()
+        assertEquals(99_000_001L, record.allianceId)
+        assertEquals(30_004_759, record.capitalSystemId)
+
+        session.close()
+        assertFalse(capital.active)
+    }
+
     private fun embeddedFeaturePack() = SovereigntyFeaturePack(
         SovereigntyRuntimeComposition(SovereigntyDataSourceMode.EMBEDDED),
     )
@@ -168,7 +210,7 @@ class SovereigntyFeaturePackTest {
         override fun fetchSovereigntySystems(): PublicEsiPayloadResult.Success {
             sovereigntyRequestCount += 1
             return PublicEsiPayloadResult.Success(
-                """{"solar_systems":[{"solar_system_id":30004759,"claim":{"alliance":{"alliance_id":99000001}}}]}""",
+                """{"solar_systems":[{"solar_system_id":30004759,"claim":{"alliance":{"alliance_id":99000001,"is_capital_system":true}}}]}""",
             )
         }
 
@@ -184,6 +226,7 @@ class SovereigntyFeaturePackTest {
     private class RecordingContext(
         private val allianceDirectory: RecordingAllianceDirectoryCapability? = null,
         private val sovereignty: RecordingSovereigntyCapability? = null,
+        private val allianceCapital: RecordingAllianceCapitalCapability? = null,
     ) : FeaturePackContext {
         val overlayRegistry = RecordingOverlayRegistry()
         val systemInfoRegistry = RecordingSystemInfoRegistry()
@@ -218,6 +261,8 @@ class SovereigntyFeaturePackTest {
                         key.type.cast(allianceDirectory)
                     key == StandardFeatureCapabilities.SOVEREIGNTY && sovereignty != null ->
                         key.type.cast(sovereignty)
+                    key == StandardFeatureCapabilities.ALLIANCE_CAPITAL && allianceCapital != null ->
+                        key.type.cast(allianceCapital)
                     else -> null
                 }
         }
@@ -232,6 +277,26 @@ class SovereigntyFeaturePackTest {
             this.provider = provider
             active = true
             return object : SovereigntyRegistration {
+                override fun requestRefresh() {
+                    if (active) refreshes += 1
+                }
+
+                override fun close() {
+                    active = false
+                }
+            }
+        }
+    }
+
+    private class RecordingAllianceCapitalCapability : AllianceCapitalCapability {
+        var provider: AllianceCapitalProvider? = null
+        var active = false
+        var refreshes = 0
+
+        override fun register(provider: AllianceCapitalProvider): AllianceCapitalRegistration {
+            this.provider = provider
+            active = true
+            return object : AllianceCapitalRegistration {
                 override fun requestRefresh() {
                     if (active) refreshes += 1
                 }

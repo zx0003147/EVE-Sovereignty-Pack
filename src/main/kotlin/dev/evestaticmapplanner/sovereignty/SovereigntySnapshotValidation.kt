@@ -4,6 +4,7 @@ internal object SovereigntySnapshotValidation {
     fun validatePublicEsi(
         snapshot: SovereigntySnapshot,
         allowLegacyMissingAllianceIds: Boolean = false,
+        allowLegacyMissingCapitalFlags: Boolean = false,
     ): String? {
         snapshot.metadata.failureMessage?.let { return "snapshot contains failure metadata" }
         if (snapshot.metadata.ignoredRecordCount != 0) return "snapshot contains ignored records"
@@ -32,6 +33,9 @@ internal object SovereigntySnapshotValidation {
             }
             if (record.corporationId != null && record.corporationId <= 0) {
                 return "$context has invalid corporationId ${record.corporationId}"
+            }
+            if (record.isCapitalSystem == null && !allowLegacyMissingCapitalFlags) {
+                return "$context is missing isCapitalSystem"
             }
             if (record.sovereigntyStatus != PUBLIC_ESI_CLAIMED_STATUS) {
                 return "$context has unsupported sovereigntyStatus '${record.sovereigntyStatus}'"

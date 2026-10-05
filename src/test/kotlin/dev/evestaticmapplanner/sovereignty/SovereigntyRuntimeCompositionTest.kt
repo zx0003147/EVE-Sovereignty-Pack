@@ -80,7 +80,7 @@ class SovereigntyRuntimeCompositionTest {
                 override fun fetchSovereigntySystems(): PublicEsiPayloadResult {
                     sovereigntyRequests += 1
                     return PublicEsiPayloadResult.Success(
-                        """{"solar_systems":[{"solar_system_id":30004759,"claim":{"alliance":{"alliance_id":99000001}}}]}""",
+                        """{"solar_systems":[{"solar_system_id":30004759,"claim":{"alliance":{"alliance_id":99000001,"is_capital_system":true}}}]}""",
                     )
                 }
 

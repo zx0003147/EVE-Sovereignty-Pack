@@ -236,7 +236,7 @@ class CachedRemoteSovereigntySourceTest {
 
     @Test
     fun `unsupported cache version is unusable and replaced after one remote success`() = withTempDirectory { root ->
-        assertUnusableCacheIsReplaced(root, """{"formatVersion":3,"source":"PUBLIC_ESI","records":[]}""")
+        assertUnusableCacheIsReplaced(root, """{"formatVersion":5,"source":"PUBLIC_ESI","records":[]}""")
     }
 
     @Test

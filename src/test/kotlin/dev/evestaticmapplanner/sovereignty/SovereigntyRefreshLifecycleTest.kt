@@ -1,6 +1,10 @@
 package dev.evestaticmapplanner.sovereignty
 
 import dev.evestaticmapplanner.feature.api.CoreVersion
+import dev.evestaticmapplanner.feature.api.AllianceCapitalCapability
+import dev.evestaticmapplanner.feature.api.AllianceCapitalProvider
+import dev.evestaticmapplanner.feature.api.AllianceCapitalRegistration
+import dev.evestaticmapplanner.feature.api.AllianceCapitalSnapshotDto
 import dev.evestaticmapplanner.feature.api.AllianceDirectoryCapability
 import dev.evestaticmapplanner.feature.api.AllianceDirectoryProvider
 import dev.evestaticmapplanner.feature.api.AllianceDirectoryProviderSnapshot
@@ -65,8 +69,11 @@ class SovereigntyRefreshLifecycleTest {
         assertEquals(1, runtime.context.sovereignty.providerRefreshRequests.get())
         assertEquals(0, client.sovereigntyRequests.get())
         assertEquals(SovereigntyFreshnessDto.AVAILABLE, runtime.context.sovereignty.current().freshness)
+        assertEquals(SovereigntyFreshnessDto.AVAILABLE, runtime.context.allianceCapital.current().freshness)
+        assertEquals(30_004_759, runtime.context.allianceCapital.current().records.single().capitalSystemId)
         session.close()
         assertFalse(runtime.context.sovereignty.active.get())
+        assertFalse(runtime.context.allianceCapital.active.get())
         assertFalse(client.closed.get(), "unused HTTP client factory must remain lazy")
     }
 
@@ -82,6 +89,7 @@ class SovereigntyRefreshLifecycleTest {
         assertEquals(1, runtime.context.sovereignty.providerRefreshRequests.get())
         client.release.countDown()
         runtime.context.sovereignty.awaitRefresh()
+        runtime.context.allianceCapital.awaitRefresh()
 
         assertEquals("Remote Alliance", runtime.context.sovereignty.currentAlliance())
         assertFalse(runtime.context.systemInfo.active.get())
@@ -91,6 +99,8 @@ class SovereigntyRefreshLifecycleTest {
         assertEquals(SovereigntyFreshnessDto.AVAILABLE, runtime.context.sovereignty.current().freshness)
         assertEquals("Remote Alliance", runtime.context.sovereignty.current().systems.single().allianceName)
         assertEquals(1, runtime.context.sovereignty.refreshes.get())
+        assertEquals(SovereigntyFreshnessDto.AVAILABLE, runtime.context.allianceCapital.current().freshness)
+        assertEquals(30_004_759, runtime.context.allianceCapital.current().records.single().capitalSystemId)
         assertTrue(runtime.context.events.any { it.contains("background refresh published fresh data") })
         session.close()
     }
@@ -105,6 +115,7 @@ class SovereigntyRefreshLifecycleTest {
         repeat(3) { runtime.context.sovereignty.requestProviderRefresh() }
         client.release.countDown()
         runtime.context.sovereignty.awaitRefresh()
+        runtime.context.allianceCapital.awaitRefresh()
 
         assertEquals(1, client.sovereigntyRequests.get())
         assertEquals("Remote Alliance", runtime.context.sovereignty.currentAlliance())
@@ -124,11 +135,14 @@ class SovereigntyRefreshLifecycleTest {
         assertTrue(client.started.await(1, TimeUnit.SECONDS))
         client.release.countDown()
         runtime.context.sovereignty.awaitRefresh()
+        runtime.context.allianceCapital.awaitRefresh()
 
         assertEquals("Stale Alliance", runtime.context.sovereignty.currentAlliance())
         assertEquals(original, Files.readString(runtime.cachePath))
         assertEquals(savedAt, Files.getLastModifiedTime(runtime.cachePath).toInstant())
         assertEquals(SovereigntyFreshnessDto.STALE, runtime.context.sovereignty.current().freshness)
+        assertEquals(SovereigntyFreshnessDto.STALE, runtime.context.allianceCapital.current().freshness)
+        assertEquals(30_004_759, runtime.context.allianceCapital.current().records.single().capitalSystemId)
         assertEquals("Stale Alliance", runtime.context.sovereignty.current().systems.single().allianceName)
         assertTrue(runtime.context.events.any { it.contains("retaining current state") })
         session.close()
@@ -143,6 +157,7 @@ class SovereigntyRefreshLifecycleTest {
         assertTrue(client.started.await(1, TimeUnit.SECONDS))
         client.release.countDown()
         runtime.context.sovereignty.awaitRefresh()
+        runtime.context.allianceCapital.awaitRefresh()
 
         assertEquals("Remote Alliance", runtime.context.sovereignty.currentAlliance())
         assertEquals("Remote Alliance", runtime.loadCache().records.single().allianceName)
@@ -158,10 +173,12 @@ class SovereigntyRefreshLifecycleTest {
         assertTrue(client.started.await(1, TimeUnit.SECONDS))
         client.release.countDown()
         runtime.context.sovereignty.awaitRefresh()
+        runtime.context.allianceCapital.awaitRefresh()
 
         assertTrue(runtime.context.sovereignty.current().systems.isEmpty())
         assertFalse(Files.exists(runtime.cachePath))
         assertEquals(SovereigntyFreshnessDto.UNAVAILABLE, runtime.context.sovereignty.current().freshness)
+        assertEquals(SovereigntyFreshnessDto.UNAVAILABLE, runtime.context.allianceCapital.current().freshness)
         assertTrue(runtime.context.sovereignty.active.get())
         session.close()
     }
@@ -319,6 +336,7 @@ class SovereigntyRefreshLifecycleTest {
         val systemInfo = RecordingSystemInfoRegistry()
         val allianceDirectory = RecordingAllianceDirectoryCapability()
         val sovereignty = RecordingSovereigntyCapability()
+        val allianceCapital = RecordingAllianceCapitalCapability()
         val events = CopyOnWriteArrayList<String>()
 
         override fun hostInfo() = FeaturePackHostInfo(
@@ -348,6 +366,7 @@ class SovereigntyRefreshLifecycleTest {
                     directoryEnabled && key == StandardFeatureCapabilities.ALLIANCE_DIRECTORY ->
                         key.type.cast(allianceDirectory)
                     key == StandardFeatureCapabilities.SOVEREIGNTY -> key.type.cast(sovereignty)
+                    key == StandardFeatureCapabilities.ALLIANCE_CAPITAL -> key.type.cast(allianceCapital)
                     else -> null
                 }
         }
@@ -406,6 +425,45 @@ class SovereigntyRefreshLifecycleTest {
 
         fun awaitRefresh() {
             assertTrue(refreshCompletion.await(2, TimeUnit.SECONDS), "typed Sovereignty refresh did not finish")
+        }
+    }
+
+    private class RecordingAllianceCapitalCapability : AllianceCapitalCapability {
+        private val provider = AtomicReference<AllianceCapitalProvider>()
+        private val latest = AtomicReference(
+            AllianceCapitalSnapshotDto(
+                emptyList(),
+                source = "test",
+                freshness = SovereigntyFreshnessDto.UNAVAILABLE,
+            ),
+        )
+        val active = AtomicBoolean(false)
+        val refreshes = AtomicInteger()
+        private val refreshCompletion = CountDownLatch(1)
+
+        override fun register(provider: AllianceCapitalProvider): AllianceCapitalRegistration {
+            this.provider.set(provider)
+            latest.set(provider.snapshot())
+            active.set(true)
+            return object : AllianceCapitalRegistration {
+                override fun requestRefresh() {
+                    if (active.get()) {
+                        refreshes.incrementAndGet()
+                        latest.set(provider.snapshot())
+                        refreshCompletion.countDown()
+                    }
+                }
+
+                override fun close() {
+                    active.set(false)
+                }
+            }
+        }
+
+        fun current(): AllianceCapitalSnapshotDto = latest.get()
+
+        fun awaitRefresh() {
+            assertTrue(refreshCompletion.await(2, TimeUnit.SECONDS), "Alliance Capital refresh did not finish")
         }
     }
 
@@ -609,14 +667,23 @@ class SovereigntyRefreshLifecycleTest {
     }
 
     private fun cachedSnapshot(allianceName: String) = SovereigntySnapshot(
-        listOf(SovereigntyRecord(30_004_759, allianceName, null, PUBLIC_ESI_CLAIMED_STATUS, 99_000_001)),
+        listOf(
+            SovereigntyRecord(
+                systemId = 30_004_759,
+                allianceName = allianceName,
+                corporationName = null,
+                sovereigntyStatus = PUBLIC_ESI_CLAIMED_STATUS,
+                allianceId = 99_000_001,
+                isCapitalSystem = true,
+            ),
+        ),
     )
 
     private companion object {
         val NOW: Instant = Instant.parse("2026-08-26T12:00:00Z")
         val FIXED_CLOCK: Clock = Clock.fixed(NOW, ZoneOffset.UTC)
         const val SOVEREIGNTY_PAYLOAD =
-            """{"solar_systems":[{"solar_system_id":30004759,"claim":{"alliance":{"alliance_id":99000001}}}]}"""
+            """{"solar_systems":[{"solar_system_id":30004759,"claim":{"alliance":{"alliance_id":99000001,"is_capital_system":true}}}]}"""
         const val NAME_PAYLOAD = """[{"id":99000001,"name":"Remote Alliance","category":"alliance"}]"""
     }
 }

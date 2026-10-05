@@ -30,6 +30,7 @@ internal class CachedRemoteSovereigntySource(
     fun loadInitialSnapshot(): SovereigntyInitialSnapshot = when (val cached = cache.load()) {
         is SovereigntyCacheLoadResult.Hit -> if (isFresh(cached)) {
             logLegacyIdentityIfPresent(cached.snapshot)
+            logLegacyCapitalFlagsIfMissing(cached.snapshot)
             logger.log(
                 FeaturePackLogLevel.INFO,
                 "Using fresh cached PUBLIC_ESI sovereignty snapshot",
@@ -43,6 +44,7 @@ internal class CachedRemoteSovereigntySource(
             )
         } else {
             logLegacyIdentityIfPresent(cached.snapshot)
+            logLegacyCapitalFlagsIfMissing(cached.snapshot)
             logger.log(
                 FeaturePackLogLevel.INFO,
                 "Using stale PUBLIC_ESI sovereignty LKG; scheduling one background refresh",
@@ -152,6 +154,17 @@ internal class CachedRemoteSovereigntySource(
             logger.log(
                 FeaturePackLogLevel.WARN,
                 "Using backwards-compatible v1 PUBLIC_ESI LKG identity fallback; a successful background refresh will restore alliance-ID visual identity",
+                null,
+            )
+        }
+    }
+
+    private fun logLegacyCapitalFlagsIfMissing(snapshot: SovereigntySnapshot) {
+        if (snapshot.records.any { it.isCapitalSystem == null }) {
+            logger.log(
+                FeaturePackLogLevel.WARN,
+                "Using backwards-compatible PUBLIC_ESI LKG without Alliance Capital data; " +
+                    "Alliance Capital remains unavailable until a successful refresh",
                 null,
             )
         }

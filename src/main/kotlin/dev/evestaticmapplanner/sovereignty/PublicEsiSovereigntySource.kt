@@ -52,6 +52,7 @@ internal class PublicEsiSovereigntySource(
                 sovereigntyStatus = PUBLIC_ESI_CLAIMED_STATUS,
                 allianceId = owner.allianceId,
                 corporationId = owner.corporationId,
+                isCapitalSystem = owner.isCapitalSystem,
             )
         }
         return RemoteSnapshotResult.Success(SovereigntySnapshot(records))
@@ -117,6 +118,7 @@ private sealed interface RemoteSovereigntyOwnerDto {
     data class Alliance(
         val allianceId: Int,
         val corporationId: Int?,
+        val isCapitalSystem: Boolean,
     ) : RemoteSovereigntyOwnerDto
 
     data class Faction(val factionId: Int) : RemoteSovereigntyOwnerDto
@@ -171,6 +173,7 @@ private fun parseSovereigntyPayload(payload: String): PayloadResult<RemoteSovere
                 RemoteSovereigntyOwnerDto.Alliance(
                     allianceId = alliance.requiredPositiveInt("alliance_id", "$context.claim.alliance"),
                     corporationId = alliance.optionalPositiveInt("corporation_id", "$context.claim.alliance"),
+                    isCapitalSystem = alliance.requiredBoolean("is_capital_system", "$context.claim.alliance"),
                 )
             }
             "faction" -> {
@@ -251,6 +254,9 @@ private fun Map<String, JsonValue>.requiredText(key: String, context: String): S
     }
     return value
 }
+
+private fun Map<String, JsonValue>.requiredBoolean(key: String, context: String): Boolean =
+    (get(key) as? JsonBoolean)?.value ?: invalid("$context.$key must be a boolean")
 
 private fun MutableMap<Int, String>.recordExpectedCategory(id: Int, category: String): Boolean {
     val existing = putIfAbsent(id, category)
